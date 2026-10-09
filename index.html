@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>chiquiOS // Alpine-Powered Web OS</title>
+<style>
+  * { box-sizing: border-box; }
+  body, html {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    font-family: monospace;
+    background: #03050a;
+    color: #00f3ff;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Escritorio del SO */
+  #desktop {
+    width: 100vw;
+    height: calc(100vh - 40px);
+    position: relative;
+    background: radial-gradient(circle at center, #0a192f 0%, #02050b 100%);
+    overflow: hidden;
+  }
+
+  /* Iconos de Escritorio */
+  .desktop-icon {
+    position: absolute;
+    width: 80px;
+    text-align: center;
+    cursor: pointer;
+    padding: 10px 5px;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  .desktop-icon:hover {
+    background: rgba(0, 243, 255, 0.1);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+  }
+  .desktop-icon span {
+    font-size: 1.8rem;
+    display: block;
+    margin-bottom: 5px;
+  }
+  .desktop-icon p {
+    font-size: 0.75rem;
+    margin: 0;
+    color: #fff;
+    text-shadow: 0 1px 2px #000;
+  }
+
+  /* Ventanas Flotantes del SO */
+  .window {
+    position: absolute;
+    min-width: 320px;
+    min-height: 200px;
+    background: rgba(5, 12, 25, 0.95);
+    border: 1px solid #00f3ff;
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(0, 243, 255, 0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 10;
+  }
+  .window.minimized {
+    display: none;
+  }
+  .window-header {
+    background: linear-gradient(90deg, rgba(0, 243, 255, 0.2), rgba(5, 12, 25, 0.9));
+    padding: 8px 12px;
+    border-bottom: 1px solid #00f3ff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: grab;
+    font-size: 0.8rem;
+  }
+  .window-header:active {
+    cursor: grabbing;
+  }
+  .window-controls {
+    display: flex;
+    gap: 6px;
+  }
+  .win-btn {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .btn-close { background: #ff3333; }
+  .btn-min { background: #ff9900; }
+  .btn-max { background: #00ff66; }
+
+  .window-content {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    color: #fff;
+  }
+
+  /* Barra de Tareas Inferior */
+  #taskbar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 40px;
+    background: rgba(3, 7, 15, 0.98);
+    border-top: 1px solid #00f3ff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    z-index: 1000;
+  }
+  .start-menu-btn {
+    background: rgba(0, 243, 255, 0.2);
+    border: 1px solid #00f3ff;
+    color: #00f3ff;
+    padding: 6px 14px;
+    font-family: monospace;
+    font-weight: bold;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .start-menu-btn:hover {
+    background: #00f3ff;
+    color: #000;
+  }
+  .taskbar-apps {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+    margin-left: 15px;
+  }
+  .taskbar-app {
+    background: rgba(0, 243, 255, 0.05);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+    color: #00f3ff;
+    padding: 4px 10px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .taskbar-app.active {
+    background: rgba(0, 243, 255, 0.2);
+    border-color: #00f3ff;
+  }
+  .taskbar-tray {
+    color: #00ff66;
+    font-size: 0.8rem;
+    display: flex;
+    gap: 15px;
+  }
+
+  /* Menú de Inicio */
+  #start-menu {
+    position: absolute;
+    bottom: 45px; left: 10px;
+    width: 250px;
+    background: rgba(5, 12, 25, 0.96);
+    border: 1px solid #00f3ff;
+    border-radius: 4px;
+    display: none;
+    flex-direction: column;
+    z-index: 2000;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+  }
+  .start-header {
+    background: rgba(0, 243, 255, 0.15);
+    padding: 10px;
+    font-weight: bold;
+    border-bottom: 1px solid #00f3ff;
+    font-size: 0.85rem;
+  }
+  .start-item {
+    padding: 10px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid rgba(0, 243, 255, 0.1);
+  }
+  .start-item:hover {
+    background: rgba(0, 243, 255, 0.2);
+    color: #fff;
+  }
+
+  .terminal-output { white-space: pre-wrap; margin-bottom: 8px; font-family: monospace; font-size: 0.8rem; }
+  .terminal-line { display: flex; gap: 6px; }
+  .terminal-input { background: transparent; border: none; color: #00ff66; font-family: monospace; outline: none; flex: 1; font-size: 0.8rem; }
+  
+  .baco-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+  }
+  .baco-ascii {
+    font-size: 1.2rem;
+    color: #ff9900;
+    line-height: 1.2;
+  }
+</style>
+</head>
+<body>
+
+  <div id="desktop">
+    <!-- Iconos de Escritorio -->
+    <div class="desktop-icon" style="top: 20px; left: 20px;" onclick="openWindow('terminal')">
+      <span>💻</span>
+      <p>Terminal</p>
+    </div>
+    <div class="desktop-icon" style="top: 120px; left: 20px;" onclick="openWindow('baco')">
+      <span>🐢</span>
+      <p>Baco.sh</p>
+    </div>
+    <div class="desktop-icon" style="top: 220px; left: 20px;" onclick="openWindow('texteditor')">
+      <span>📝</span>
+      <p>NanoPad</p>
+    </div>
+  </div>
+
+  <!-- Menú de Inicio -->
+  <div id="start-menu">
+    <div class="start-header">⚡ chiquiOS (Alpine Core)</div>
+    <div class="start-item" onclick="openWindow('terminal'); toggleStartMenu();">💻 Terminal APK CLI</div>
+    <div class="start-item" onclick="openWindow('baco'); toggleStartMenu();">🐢 Monitor Baco Daemon</div>
+    <div class="start-item" onclick="openWindow('texteditor'); toggleStartMenu();">📝 Editor NanoPad</div>
+    <div class="start-item" onclick="systemReboot();">🔄 Reiniciar Sistema</div>
+  </div>
+
+  <!-- Barra de Tareas -->
+  <div id="taskbar">
+    <button class="start-menu-btn" onclick="toggleStartMenu()">⚡ chiquiOS</button>
+    <div class="taskbar-apps" id="taskbar-apps"></div>
+    <div class="taskbar-tray">
+      <span>🐢 Baco: OK</span>
+      <span id="sys-clock">00:00:00</span>
+    </div>
+  </div>
+
+  <script>
+    setInterval(() => {
+      document.getElementById('sys-clock').textContent = new Date().toLocaleTimeString();
+    }, 1000);
+
+    function toggleStartMenu() {
+      const menu = document.getElementById('start-menu');
+      menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    // Sistema de archivos virtual con soporte para paquetes Alpine instalados
+    let vfs = JSON.parse(localStorage.getItem('chiqui_vfs')) || {
+      "/home/user/welcome.txt": "Bienvenido a chiquiOS con motor Alpine APK.",
+      "/etc/alpine-release": "3.23.0-browser",
+      "/etc/apk/world": "alpine-base\n"
+    };
+
+    let installedPackages = JSON.parse(localStorage.getItem('chiqui_pkgs')) || ["alpine-base", "busybox", "apk-tools"];
+
+    function saveVFS() {
+      localStorage.setItem('chiqui_vfs', JSON.stringify(vfs));
+      localStorage.setItem('chiqui_pkgs', JSON.stringify(installedPackages));
+    }
+
+    let activeWindows = {};
+    let zIndexCounter = 100;
+
+    function openWindow(appId) {
+      if (activeWindows[appId]) {
+        bringToFront(appId);
+        document.getElementById(`win-${appId}`).classList.remove('minimized');
+        return;
+      }
+
+      zIndexCounter++;
+      const win = document.createElement('div');
+      win.className = 'window';
+      win.id = `win-${appId}`;
+      win.style.zIndex = zIndexCounter;
+      win.style.top = `${50 + (Object.keys(activeWindows).length * 30)}px`;
+      win.style.left = `${100 + (Object.keys(activeWindows).length * 40)}px`;
+      win.style.width = appId === 'terminal' ? '520px' : '400px';
+      win.style.height = appId === 'terminal' ? '360px' : '300px';
+
+      let title = "Ventana";
+      let contentHtml = "";
+
+      if (appId === 'terminal') {
+        title = "root@chiquiOS: ~ (Alpine APK Shell)";
+        contentHtml = `
+          <div class="terminal-output" id="term-out">chiquiOS Alpine Linux v3.23 (x86_64)
+Escribí 'apk add [paquete]' para instalar herramientas o 'help'.
+</div>
+          <div class="terminal-line">
+            <span>chiquios:~#</span>
+            <input type="text" class="terminal-input" id="term-in" autofocus onkeypress="handleTerminal(event)">
+          </div>
+        `;
+      } else if (appId === 'baco') {
+        title = "Baco Daemon v1.0 // Estado de Mascota";
+        contentHtml = `
+          <div class="baco-panel">
+            <div class="baco-ascii">
+               _
+             _(_)_
+            (_(O)_)
+              (_)_
+            </div>
+            <p><b>Sujeto:</b> Baco (Tortuga Argentina)</p>
+            <p><b>Ubicación:</b> Balcón / Monitoreo térmico activo</p>
+            <p><em>"Baco supervisa la integridad de los paquetes APK."</em></p>
+          </div>
+        `;
+      } else if (appId === 'texteditor') {
+        title = "NanoPad // Editor VFS";
+        contentHtml = `
+          <div style="display:flex; flex-direction:column; height:100%; gap:8px;">
+            <input type="text" id="nano-path" value="/home/user/welcome.txt" style="background:#02050b; border:1px solid #00f3ff; color:#fff; padding:4px; font-family:monospace;">
+            <textarea id="nano-text" style="flex:1; background:#02050b; color:#00ff66; border:1px solid #00f3ff; padding:8px; font-family:monospace; resize:none;">${vfs['/home/user/welcome.txt'] || ''}</textarea>
+            <button onclick="saveNanoFile()" style="background:rgba(0,243,255,0.2); border:1px solid #00f3ff; color:#00f3ff; padding:6px; cursor:pointer; font-family:monospace;">Guardar en VFS</button>
+          </div>
+        `;
+      }
+
+      win.innerHTML = `
+        <div class="window-header" onmousedown="startDrag(event, '${appId}')">
+          <span>${title}</span>
+          <div class="window-controls">
+            <button class="win-btn btn-min" onclick="minimizeWindow('${appId}')"></button>
+            <button class="win-btn btn-max" onclick="maximizeWindow('${appId}')"></button>
+            <button class="win-btn btn-close" onclick="closeWindow('${appId}')"></button>
+          </div>
+        </div>
+        <div class="window-content">${contentHtml}</div>
+      `;
+
+      document.getElementById('desktop').appendChild(win);
+      activeWindows[appId] = win;
+      updateTaskbar();
+
+      if (appId === 'terminal') {
+        document.getElementById('term-in').focus();
+      }
+    }
+
+    function closeWindow(appId) {
+      if (activeWindows[appId]) {
+        activeWindows[appId].remove();
+        delete activeWindows[appId];
+        updateTaskbar();
+      }
+    }
+
+    function minimizeWindow(appId) {
+      document.getElementById(`win-${appId}`).classList.add('minimized');
+    }
+
+    function maximizeWindow(appId) {
+      const win = document.getElementById(`win-${appId}`);
+      if (win.style.width === '100vw') {
+        win.style.width = '520px';
+        win.style.height = '360px';
+        win.style.top = '50px';
+        win.style.left = '100px';
+      } else {
+        win.style.width = '100vw';
+        win.style.height = 'calc(100vh - 40px)';
+        win.style.top = '0';
+        win.style.left = '0';
+      }
+    }
+
+    function bringToFront(appId) {
+      zIndexCounter++;
+      document.getElementById(`win-${appId}`).style.zIndex = zIndexCounter;
+    }
+
+    function updateTaskbar() {
+      const taskbarApps = document.getElementById('taskbar-apps');
+      taskbarApps.innerHTML = '';
+      Object.keys(activeWindows).forEach(appId => {
+        const btn = document.createElement('button');
+        btn.className = 'taskbar-app active';
+        btn.textContent = appId.toUpperCase();
+        btn.onclick = () => {
+          const win = document.getElementById(`win-${appId}`);
+          if (win.classList.contains('minimized')) {
+            win.classList.remove('minimized');
+            bringToFront(appId);
+          } else {
+            minimizeWindow(appId);
+          }
+        };
+        taskbarApps.appendChild(btn);
+      });
+    }
+
+    function startDrag(e, appId) {
+      bringToFront(appId);
+      const win = document.getElementById(`win-${appId}`);
+      let shiftX = e.clientX - win.getBoundingClientRect().left;
+      let shiftY = e.clientY - win.getBoundingClientRect().top;
+
+      function onMouseMove(event) {
+        win.style.left = `${event.clientX - shiftX}px`;
+        win.style.top = `${event.clientY - shiftY}px`;
+      }
+
+      function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    }
+
+    // Terminal con soporte APK oficial emulado
+    function handleTerminal(e) {
+      if (e.key === 'Enter') {
+        const input = document.getElementById('term-in');
+        const cmd = input.value.trim();
+        const out = document.getElementById('term-out');
+
+        out.textContent += `\nchiquios:~# ${cmd}\n`;
+
+        const args = cmd.split(' ');
+        const mainCmd = args[0];
+
+        if (mainCmd === 'help') {
+          out.textContent += `Comandos Alpine / chiquiOS:\n  ls                  Listar archivos virtuales\n  cat [path]          Leer archivo\n  apk update          Actualizar repositorios Alpine\n  apk add [paquete]   Instalar paquete (ej: htop, git, curl)\n  apk info            Listar paquetes instalados\n  baco                Estado de la tortuga\n  clear               Limpiar consola\n  reboot              Reiniciar SO`;
+        } else if (mainCmd === 'ls') {
+          out.textContent += Object.keys(vfs).join('\n');
+        } else if (mainCmd === 'cat') {
+          const path = args[1];
+          if (vfs[path] !== undefined) {
+            out.textContent += vfs[path];
+          } else {
+            out.textContent += `cat: ${path || 'archivo no especificado'}: No existe el archivo`;
+          }
+        } else if (cmd === 'apk update') {
+          out.textContent += `fetch https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz\nfetch https://dl-cdn.alpinelinux.org/alpine/v3.23/community/x86_64/APKINDEX.tar.gz\nv3.23.0-r3 [OK]`;
+        } else if (mainCmd === 'apk' && args[1] === 'add') {
+          const pkg = args[2];
+          if (!pkg) {
+            out.textContent += `Error: Debes especificar un paquete (ej: apk add htop)`;
+          } else if (installedPackages.includes(pkg)) {
+            out.textContent += `(1/1) Ok: ${pkg} ya está instalado en el sistema.`;
+          } else {
+            installedPackages.push(pkg);
+            vfs[`/usr/bin/${pkg}`] = `Binary executable for ${pkg} (Alpine Linux)`;
+            saveVFS();
+            out.textContent += `(1/1) Installing ${pkg} (3.23-r1)...\nOK: 1 packages successfully installed [5.2 MiB used]`;
+          }
+        } else if (mainCmd === 'apk' && args[1] === 'info') {
+          out.textContent += `Paquetes instalados en chiquiOS (Alpine):\n` + installedPackages.join('\n');
+        } else if (mainCmd === 'clear') {
+          out.textContent = "";
+        } else if (cmd === 'baco') {
+          out.textContent += "🐢 Baco: Todo en orden en el balcón. Comprobación de paquetes APK exitosa.";
+        } else if (cmd === 'reboot') {
+          systemReboot();
+        } else if (cmd !== '') {
+          out.textContent += `sh: ${mainCmd}: comando no encontrado. Escribí 'help'.`;
+        }
+
+        input.value = '';
+        const winContent = out.parentElement;
+        winContent.scrollTop = winContent.scrollHeight;
+        input.focus();
+      }
+    }
+
+    function saveNanoFile() {
+      const path = document.getElementById('nano-path').value;
+      const text = document.getElementById('nano-text').value;
+      vfs[path] = text;
+      saveVFS();
+      alert("¡Archivo guardado con éxito en chiquiOS VFS!");
+    }
+
+    function systemReboot() {
+      location.reload();
+    }
+  </script>
+</body>
+</html>
