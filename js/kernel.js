@@ -1,19 +1,18 @@
-import { initTerminal } from './terminal.js';
 import { initBaco } from './baco.js';
 
 class ChiquiOSKernel {
   constructor() {
-    this.vfs = JSON.parse(localStorage.getItem('chiqui_vfs')) || {
-      "/home/user/welcome.txt": "Bienvenido a chiquiOS Modular con Alpine APK.",
-      "/etc/alpine-release": "3.23.0-browser"
+    this.vfs = JSON.parse(localStorage.getItem('chiqui_vfs_tree')) || {
+      "/home/user/welcome.txt": "Bienvenido a chiquiOS con un Kernel de Linux real emulado por v86."
     };
-    this.packages = JSON.parse(localStorage.getItem('chiqui_pkgs')) || ["alpine-base", "busybox", "apk-tools"];
+    this.packages = JSON.parse(localStorage.getItem('chiqui_pkgs')) || ["alpine-base", "v86-emulator"];
     this.activeWindows = {};
     this.zIndexCounter = 100;
+    this.emulatorInstance = null;
   }
 
   saveState() {
-    localStorage.setItem('chiqui_vfs', JSON.stringify(this.vfs));
+    localStorage.setItem('chiqui_vfs_tree', JSON.stringify(this.vfs));
     localStorage.setItem('chiqui_pkgs', JSON.stringify(this.packages));
   }
 
@@ -29,18 +28,24 @@ class ChiquiOSKernel {
     win.className = 'window';
     win.id = `win-${appId}`;
     win.style.zIndex = this.zIndexCounter;
-    win.style.top = `${60 + (Object.keys(this.activeWindows).length * 30)}px`;
-    win.style.left = `${120 + (Object.keys(this.activeWindows).length * 40)}px`;
-    win.style.width = appId === 'terminal' ? '520px' : '400px';
-    win.style.height = appId === 'terminal' ? '360px' : '300px';
+    win.style.top = `${50 + (Object.keys(this.activeWindows).length * 20)}px`;
+    win.style.left = `${80 + (Object.keys(this.activeWindows).length * 30)}px`;
+    win.style.width = appId === 'terminal' ? '640px' : '420px';
+    win.style.height = appId === 'terminal' ? '440px' : '320px';
 
     let title = "Ventana";
     let contentHtml = "";
 
     if (appId === 'terminal') {
-      title = "root@chiquiOS: ~ (Alpine APK Shell)";
-      contentHtml = `<div class="terminal-output" id="term-out">chiquiOS Alpine Linux v3.23 (Modular)\nEscribí 'help' o 'apk add [paquete]'.\n</div>
-                     <div class="terminal-line"><span>chiquios:~#</span><input type="text" class="terminal-input" id="term-in" autofocus></div>`;
+      title = "root@chiquiOS: ~ (Alpine Linux Real - v86)";
+      contentHtml = `<div id="v86-container" style="width:100%; height:100%; background:#000; display:flex; flex-direction:column; position:relative;">
+        <div style="background:#111; color:#00ff66; padding:4px 8px; font-size:0.75rem; border-bottom:1px solid #00f3ff;">
+          Cargando BIOS y Kernel x86 (Alpine Linux)... Aguarda un momento.
+        </div>
+        <div id="screen_container" style="flex:1; overflow:hidden; position:relative;">
+          <div style="white-space: pre; font-family: monospace; line-height: 14px;" id="screen"></div>
+        </div>
+      </div>`;
     } else if (appId === 'baco') {
       title = "Baco Daemon // Monitor Oficial";
       contentHtml = initBaco();
@@ -62,7 +67,7 @@ class ChiquiOSKernel {
           <button class="win-btn btn-close" data-action="close" data-appid="${appId}"></button>
         </div>
       </div>
-      <div class="window-content">${contentHtml}</div>
+      <div class="window-content" style="padding:0; overflow:hidden;">${contentHtml}</div>
     `;
 
     document.getElementById('desktop').appendChild(win);
@@ -70,15 +75,29 @@ class ChiquiOSKernel {
     this.updateTaskbar();
     this.setupWindowEvents(appId);
 
-    if (appId === 'terminal') {
-      initTerminal(this);
+    if (appId === 'terminal' && typeof V86Starter !== 'undefined') {
+      // Inicializar v86 con una imagen de Alpine Linux optimizada para web
+      try {
+        this.emulatorInstance = new V86Starter({
+          wasm_path: "https://cdn.jsdelivr.net/npm/v86@latest/build/v86.wasm",
+          memory_size: 64 * 1024 * 1024, // 64MB RAM virtual
+          vga_memory_size: 2 * 1024 * 1024,
+          screen_container: document.getElementById("screen_container"),
+          bios: { url: "https://cdn.jsdelivr.net/npm/v86@latest/bios/seabios.bin" },
+          vga_bios: { url: "https://cdn.jsdelivr.net/npm/v86@latest/bios/vgabios.bin" },
+          cdrom: { url: "https://copy.sh/v86/images/alpine.iso" }, // ISO oficial de Alpine de prueba
+          autostart: true
+        });
+      } catch (err) {
+        console.error("Error al iniciar v86:", err);
+      }
     } else if (appId === 'texteditor') {
       document.getElementById('nano-save').onclick = () => {
         const path = document.getElementById('nano-path').value;
         const text = document.getElementById('nano-text').value;
         this.vfs[path] = text;
         this.saveState();
-        alert("¡Archivo guardado en el VFS modular!");
+        alert("¡Archivo guardado!");
       };
     }
   }
@@ -107,11 +126,17 @@ class ChiquiOSKernel {
     win.querySelectorAll('.win-btn').forEach(btn => {
       btn.onclick = () => {
         const action = btn.dataset.action;
-        if (action === 'close') this.closeApp(appId);
+        if (action === 'close') {
+          if (appId === 'terminal' && this.emulatorInstance) {
+            this.emulatorInstance.destroy();
+            this.emulatorInstance = null;
+          }
+          this.closeApp(appId);
+        }
         if (action === 'min') win.classList.add('minimized');
         if (action === 'max') {
           if (win.style.width === '100vw') {
-            win.style.width = '520px'; win.style.height = '360px';
+            win.style.width = '640px'; win.style.height = '440px';
           } else {
             win.style.width = '100vw'; win.style.height = 'calc(100vh - 40px)';
             win.style.top = '0'; win.style.left = '0';
