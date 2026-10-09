@@ -3,17 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>chiquiOS // Real Linux Web OS (v86)</title>
+<title>chiquiOS // Native Web OS</title>
 <link rel="stylesheet" href="css/style.css">
-<!-- Librería oficial de v86 para emular x86 / Linux real en WASM -->
-<script src="https://cdn.jsdelivr.net/npm/v86@latest/build/libv86.js"></script>
 </head>
 <body>
 
   <div id="desktop">
     <div class="desktop-icon" style="top: 20px; left: 20px;" onclick="window.chiquiOS.openApp('terminal')">
-      <span>🐧</span>
-      <p>Alpine Linux</p>
+      <span>💻</span>
+      <p>Terminal</p>
     </div>
     <div class="desktop-icon" style="top: 120px; left: 20px;" onclick="window.chiquiOS.openApp('baco')">
       <span>🐢</span>
@@ -23,14 +21,24 @@
       <span>📝</span>
       <p>NanoPad</p>
     </div>
+    <div class="desktop-icon" style="top: 320px; left: 20px;" onclick="window.chiquiOS.openApp('browsertortu')">
+      <span>🐢🌐</span>
+      <p>Browsertortu</p>
+    </div>
+    <div class="desktop-icon" style="top: 420px; left: 20px;" onclick="window.chiquiOS.openApp('vscodebacus')">
+      <span>🐢💻</span>
+      <p>vscodebacus</p>
+    </div>
   </div>
 
   <!-- Menú de Inicio -->
   <div id="start-menu" class="hidden">
-    <div class="start-header">⚡ chiquiOS (v86 Real Linux Kernel)</div>
-    <div class="start-item" onclick="window.chiquiOS.openApp('terminal'); toggleStartMenu();">🐧 Terminal Alpine (Real)</div>
+    <div class="start-header">⚡ chiquiOS (Native Engine)</div>
+    <div class="start-item" onclick="window.chiquiOS.openApp('terminal'); toggleStartMenu();">💻 Terminal Nativa</div>
     <div class="start-item" onclick="window.chiquiOS.openApp('baco'); toggleStartMenu();">🐢 Monitor Baco Daemon</div>
     <div class="start-item" onclick="window.chiquiOS.openApp('texteditor'); toggleStartMenu();">📝 Editor NanoPad</div>
+    <div class="start-item" onclick="window.chiquiOS.openApp('browsertortu'); toggleStartMenu();">🐢🌐 Browsertortu</div>
+    <div class="start-item" onclick="window.chiquiOS.openApp('vscodebacus'); toggleStartMenu();">🐢💻 vscodebacus IDE</div>
     <div class="start-item" onclick="location.reload();">🔄 Reiniciar Sistema</div>
   </div>
 
