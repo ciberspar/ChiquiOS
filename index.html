@@ -3,10 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>chiquiOS // Native Web OS</title>
+<title>chiquiOS // Native Web OS + Python</title>
 <link rel="stylesheet" href="css/style.css">
+<!-- Librería oficial de Brython para Python real en el navegador -->
+<script src="https://cdn.jsdelivr.net/npm/brython@3.11.0/brython.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/brython@3.11.0/brython_stdlib.js"></script>
 </head>
-<body>
+<body onload="brython()">
 
   <div id="desktop">
     <div class="desktop-icon" style="top: 20px; left: 20px;" onclick="window.chiquiOS.openApp('terminal')">
@@ -33,7 +36,7 @@
 
   <!-- Menú de Inicio -->
   <div id="start-menu" class="hidden">
-    <div class="start-header">⚡ chiquiOS (Native Engine)</div>
+    <div class="start-header">⚡ chiquiOS (Python Engine)</div>
     <div class="start-item" onclick="window.chiquiOS.openApp('terminal'); toggleStartMenu();">💻 Terminal Nativa</div>
     <div class="start-item" onclick="window.chiquiOS.openApp('baco'); toggleStartMenu();">🐢 Monitor Baco Daemon</div>
     <div class="start-item" onclick="window.chiquiOS.openApp('texteditor'); toggleStartMenu();">📝 Editor NanoPad</div>
@@ -47,12 +50,12 @@
     <button class="start-menu-btn" onclick="toggleStartMenu()">⚡ chiquiOS</button>
     <div class="taskbar-apps" id="taskbar-apps"></div>
     <div class="taskbar-tray">
-      <span>🐢 Baco: OK</span>
+      <span>🐢 Baco: Lluvia OK</span>
       <span id="sys-clock">00:00:00</span>
     </div>
   </div>
 
-  <!-- KERNEL INTEGRADO (Evita bloqueos de CORS y Módulos en Safari / iOS) -->
+  <!-- KERNEL UNIFICADO + BRYTHON PYTHON REAL -->
   <script>
     class ChiquiOSKernel {
       constructor() {
@@ -60,12 +63,11 @@
           "/": { type: "dir", content: ["bin", "home", "etc", "root"] },
           "/bin": { type: "dir", content: ["bacus", "ls", "cat", "echo", "touch", "mkdir", "rm", "pwd", "clear"] },
           "/home": { type: "dir", content: ["user"] },
-          "/home/user": { type: "dir", content: ["welcome.txt", "juego.py", "app.py"] },
-          "/home/user/welcome.txt": { type: "file", content: "Bienvenido a chiquiOS v4.0.\nUn sistema operativo web nativo, libre y modular." },
-          "/home/user/juego.py": { type: "file", content: "# vscodebacus - Entorno para chiquiOS\ndef iniciar_juego():\n    print('¡Bienvenido a vscodebacus con Python!')\n    personaje = 'Baco'\n    print(f'Desarrollando apps y juegos con {personaje}')\n\niniciar_juego()" },
-          "/home/user/app.py": { type: "file", content: "# App de prueba\nprint('Hola desde app.py en chiquiOS')" },
+          "/home/user": { type: "dir", content: ["welcome.txt", "juego.py"] },
+          "/home/user/welcome.txt": { type: "file", content: "Bienvenido a chiquiOS v4.1.\nDisfrutando la lluvia con Python real y Baco." },
+          "/home/user/juego.py": { type: "file", content: "# Python real con Brython en chiquiOS\nimport math\n\ndef calcular_lluvia():\n    print('¡Hola desde Python real en chiquiOS!')\n    radio = 5\n    area = math.pi * (radio ** 2)\n    print(f'Área de cálculo simulada: {area:.2f}')\n    for i in range(3):\n        print(f'Gota de lluvia número {i+1} cayendo...')\n\ncalcular_lluvia()" },
           "/etc": { type: "dir", content: ["os-release", "hostname"] },
-          "/etc/os-release": { type: "file", content: "NAME=\"chiquiOS\"\nID=chiquios\nVERSION=\"4.0-native\"" },
+          "/etc/os-release": { type: "file", content: "NAME=\"chiquiOS\"\nID=chiquios\nVERSION=\"4.1-python\"" },
           "/etc/hostname": { type: "file", content: "chiquios-station" },
           "/root": { type: "dir", content: [] }
         };
@@ -98,7 +100,7 @@
         if (appId === 'terminal') {
           win.style.width = '320px'; win.style.height = '300px';
         } else if (appId === 'browsertortu' || appId === 'vscodebacus') {
-          win.style.width = '340px'; win.style.height = '350px';
+          win.style.width = '350px'; win.style.height = '380px';
         } else {
           win.style.width = '300px'; win.style.height = '280px';
         }
@@ -108,15 +110,15 @@
 
         if (appId === 'terminal') {
           title = "Terminal Nativa";
-          contentHtml = `<div class="terminal-output" id="term-out" style="font-size:11px;">chiquiOS v4.0-native\nEscribí 'help' para comandos.\n</div>
+          contentHtml = `<div class="terminal-output" id="term-out" style="font-size:11px;">chiquiOS v4.1-python\nEscribí 'help' para comandos.\n</div>
                          <div class="terminal-line"><span id="term-prompt">root@chiquiOS:/#</span><input type="text" class="terminal-input" id="term-in" autofocus></div>`;
         } else if (appId === 'baco') {
           title = "Baco Daemon";
           contentHtml = `<div style="padding:10px; font-family:monospace; color:#00ff66; font-size:12px;">
-            <h3>🐢 Baco Daemon v2.4</h3>
-            <p>Estado del sistema: <b>Óptimo</b></p>
-            <p>Tortuga durmiendo plácidamente.</p>
-            <p>VFS LocalStorage: Sincronizado.</p>
+            <h3>🐢 Baco Daemon v2.5</h3>
+            <p>Estado: <b>Disfrutando la lluvia 🌧️</b></p>
+            <p>Temperatura ideal para programar.</p>
+            <p>VFS LocalStorage: Activo.</p>
           </div>`;
         } else if (appId === 'texteditor') {
           title = "NanoPad";
@@ -126,7 +128,7 @@
             <button id="nano-save" style="background:rgba(0,243,255,0.2); border:1px solid #00f3ff; color:#00f3ff; padding:4px; cursor:pointer; font-size:11px; font-family:monospace;">Guardar</button>
           </div>`;
         } else if (appId === 'browsertortu') {
-          title = "Browsertortu";
+          title = "Browsertortu 🐢🌐";
           contentHtml = `<div style="display:flex; flex-direction:column; height:100%; background:#02050b;">
             <div style="display:flex; background:#0a1118; padding:4px; gap:4px; border-bottom:1px solid #00f3ff; align-items:center;">
               <span>🐢</span>
@@ -136,19 +138,18 @@
             <iframe id="tortu-frame" src="https://example.com" style="flex:1; border:none; background:#fff;"></iframe>
           </div>`;
         } else if (appId === 'vscodebacus') {
-          title = "vscodebacus IDE";
+          title = "vscodebacus (Python Real)";
           contentHtml = `<div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; font-family:monospace; color:#d4d4d4; font-size:11px;">
             <div style="display:flex; background:#2d2d2d; padding:4px; gap:4px; align-items:center; border-bottom:1px solid #333;">
               <span style="color:#00f3ff;">🐢IDE</span>
               <select id="vsc-file-select" style="background:#1e1e1e; color:#fff; border:1px solid #444; font-size:10px;">
                 <option value="/home/user/juego.py">juego.py</option>
-                <option value="/home/user/app.py">app.py</option>
               </select>
-              <button id="vsc-run" style="background:#0e639c; color:#fff; border:none; padding:2px 6px; cursor:pointer; font-size:10px;">▶ Run</button>
+              <button id="vsc-run" style="background:#0e639c; color:#fff; border:none; padding:2px 6px; cursor:pointer; font-size:10px;">▶ Run Python</button>
             </div>
             <div style="display:flex; flex:1; overflow:hidden; flex-direction:column;">
               <textarea id="vsc-editor" style="flex:1; background:#1e1e1e; color:#9cdcfe; border:none; padding:6px; resize:none; font-family:monospace; font-size:11px; outline:none;">${this.vfs['/home/user/juego.py'] ? this.vfs['/home/user/juego.py'].content : ''}</textarea>
-              <pre id="vsc-output" style="height:70px; margin:0; padding:4px; background:#111; color:#4ec9b0; font-size:10px; overflow-y:auto; border-top:1px solid #333; white-space:pre-wrap;"></pre>
+              <pre id="vsc-output" style="height:90px; margin:0; padding:4px; background:#111; color:#4ec9b0; font-size:10px; overflow-y:auto; border-top:1px solid #333; white-space:pre-wrap;"></pre>
             </div>
           </div>`;
         }
@@ -189,33 +190,22 @@
         } else if (appId === 'vscodebacus') {
           const editor = document.getElementById('vsc-editor');
           const output = document.getElementById('vsc-output');
-          const fileSelect = document.getElementById('vsc-file-select');
-
-          fileSelect.onchange = () => {
-            if (this.vfs[fileSelect.value]) editor.value = this.vfs[fileSelect.value].content;
-          };
 
           document.getElementById('vsc-run').onclick = () => {
-            output.textContent = "Ejecutando...\n";
+            output.textContent = "Ejecutando Python real con Brython...\n";
             const code = editor.value;
-            let logs = [];
+            
+            // Guardamos en el VFS
+            this.vfs['/home/user/juego.py'] = { type: "file", content: code };
+            this.saveState();
+
+            // Redirigimos la salida standard de Brython (`sys.stdout`) hacia nuestra consola del IDE
             try {
-              this.vfs[fileSelect.value] = { type: "file", content: code };
-              this.saveState();
-              for (let line of code.split('\n')) {
-                line = line.trim();
-                if (line.startsWith('print(')) {
-                  let content = line.substring(6, line.length - 1);
-                  if (content.startsWith('"') || content.startsWith("'")) {
-                    logs.push(content.slice(1, -1));
-                  } else {
-                    logs.push(eval(content));
-                  }
-                }
-              }
-              output.textContent += logs.join('\n') + "\n[OK]";
+              window.py_output_div = output;
+              // Ejecutamos mediante el motor real de Brython inyectando un script temporal
+              window.BPython.runPython(code, output);
             } catch (err) {
-              output.textContent += `Error: ${err.message}`;
+              output.textContent += `Error de ejecución: ${err.message}\n`;
             }
           };
         }
@@ -266,7 +256,7 @@
                   out.textContent += `cd: No encontrado\n`;
                 }
               } else if (mainCmd === 'clear') {
-                out.textContent = "chiquiOS v4.0\n";
+                out.textContent = "chiquiOS v4.1\n";
               } else {
                 out.textContent += `sh: comando no encontrado: ${mainCmd}\n`;
               }
@@ -358,6 +348,37 @@
         });
       }
     }
+
+    // Adaptador de Brython para capturar prints y mostrar en la consola de vscodebacus
+    window.BPython = {
+      runPython: function(code, outputElement) {
+        outputElement.textContent = "";
+        // Configuramos la redirección de print de python a nuestro elemento HTML
+        window.py_print_buffer = "";
+        
+        // Reemplazamos temporalmente el console.log o creamos un entorno seguro de ejecución de brython
+        try {
+          // Brython compila y ejecuta código Python en el namespace global
+          var compiled = __BRYTHON__.py2js(code, '__main__', '__main__');
+          
+          // Creamos una función segura que capture los prints
+          var customPrint = function(...args) {
+            window.py_print_buffer += args.join(" ") + "\n";
+            outputElement.textContent = window.py_print_buffer;
+          };
+
+          // Ejecutamos el script compilado
+          var sandbox = new Function('print', compiled);
+          sandbox(customPrint);
+          
+          if (!outputElement.textContent) {
+            outputElement.textContent = "[Script ejecutado sin salida en pantalla]";
+          }
+        } catch(e) {
+          outputElement.textContent += "Error de Python: " + e.toString();
+        }
+      }
+    };
 
     window.chiquiOS = new ChiquiOSKernel();
 
