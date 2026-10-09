@@ -1,14 +1,23 @@
+import { initTerminal } from './terminal.js';
 import { initBaco } from './baco.js';
 
 class ChiquiOSKernel {
   constructor() {
     this.vfs = JSON.parse(localStorage.getItem('chiqui_vfs_tree')) || {
-      "/home/user/welcome.txt": "Bienvenido a chiquiOS con un Kernel de Linux real emulado por v86."
+      "/": { type: "dir", content: ["bin", "home", "etc", "root"] },
+      "/bin": { type: "dir", content: ["bacus", "ls", "cat", "echo", "touch", "mkdir", "rm", "pwd", "clear"] },
+      "/home": { type: "dir", content: ["user"] },
+      "/home/user": { type: "dir", content: ["welcome.txt"] },
+      "/home/user/welcome.txt": { type: "file", content: "Bienvenido a chiquiOS v4.0.\nUn sistema operativo web nativo, libre y modular." },
+      "/etc": { type: "dir", content: ["os-release", "hostname"] },
+      "/etc/os-release": { type: "file", content: "NAME=\"chiquiOS\"\nID=chiquios\nVERSION=\"4.0-native\"" },
+      "/etc/hostname": { type: "file", content: "chiquios-station" },
+      "/root": { type: "dir", content: [] }
     };
-    this.packages = JSON.parse(localStorage.getItem('chiqui_pkgs')) || ["alpine-base", "v86-emulator"];
+
+    this.packages = JSON.parse(localStorage.getItem('chiqui_pkgs')) || ["chiquios-core", "bacus-pm", "nanopad", "browsertortu"];
     this.activeWindows = {};
     this.zIndexCounter = 100;
-    this.emulatorInstance = null;
   }
 
   saveState() {
@@ -28,33 +37,37 @@ class ChiquiOSKernel {
     win.className = 'window';
     win.id = `win-${appId}`;
     win.style.zIndex = this.zIndexCounter;
-    win.style.top = `${50 + (Object.keys(this.activeWindows).length * 20)}px`;
-    win.style.left = `${80 + (Object.keys(this.activeWindows).length * 30)}px`;
-    win.style.width = appId === 'terminal' ? '640px' : '420px';
-    win.style.height = appId === 'terminal' ? '440px' : '320px';
+    win.style.top = `${50 + (Object.keys(this.activeWindows).length * 25)}px`;
+    win.style.left = `${80 + (Object.keys(this.activeWindows).length * 35)}px`;
+    win.style.width = appId === 'terminal' ? '540px' : (appId === 'browsertortu' ? '580px' : '420px');
+    win.style.height = appId === 'terminal' ? '380px' : (appId === 'browsertortu' ? '420px' : '320px');
 
     let title = "Ventana";
     let contentHtml = "";
 
     if (appId === 'terminal') {
-      title = "root@chiquiOS: ~ (Alpine Linux Real - v86)";
-      contentHtml = `<div id="v86-container" style="width:100%; height:100%; background:#000; display:flex; flex-direction:column; position:relative;">
-        <div style="background:#111; color:#00ff66; padding:4px 8px; font-size:0.75rem; border-bottom:1px solid #00f3ff;">
-          Cargando BIOS y Kernel x86 (Alpine Linux)... Aguarda un momento.
-        </div>
-        <div id="screen_container" style="flex:1; overflow:hidden; position:relative;">
-          <div style="white-space: pre; font-family: monospace; line-height: 14px;" id="screen"></div>
-        </div>
-      </div>`;
+      title = "root@chiquiOS: ~ (Terminal Nativa)";
+      contentHtml = `<div class="terminal-output" id="term-out">chiquiOS v4.0-native (x86_64-web)\nEscribí 'help' para ver los comandos del sistema.\n</div>
+                     <div class="terminal-line"><span id="term-prompt">root@chiquiOS:/#</span><input type="text" class="terminal-input" id="term-in" autofocus></div>`;
     } else if (appId === 'baco') {
       title = "Baco Daemon // Monitor Oficial";
       contentHtml = initBaco();
     } else if (appId === 'texteditor') {
-      title = "NanoPad // Editor VFS";
+      title = "NanoPad // Editor de Texto VFS";
       contentHtml = `<div style="display:flex; flex-direction:column; height:100%; gap:8px;">
         <input type="text" id="nano-path" value="/home/user/welcome.txt" style="background:#02050b; border:1px solid #00f3ff; color:#fff; padding:4px; font-family:monospace;">
-        <textarea id="nano-text" style="flex:1; background:#02050b; color:#00ff66; border:1px solid #00f3ff; padding:8px; font-family:monospace; resize:none;">${this.vfs['/home/user/welcome.txt'] || ''}</textarea>
+        <textarea id="nano-text" style="flex:1; background:#02050b; color:#00ff66; border:1px solid #00f3ff; padding:8px; font-family:monospace; resize:none;">${this.vfs['/home/user/welcome.txt'] ? this.vfs['/home/user/welcome.txt'].content : ''}</textarea>
         <button id="nano-save" style="background:rgba(0,243,255,0.2); border:1px solid #00f3ff; color:#00f3ff; padding:6px; cursor:pointer; font-family:monospace;">Guardar en VFS</button>
+      </div>`;
+    } else if (appId === 'browsertortu') {
+      title = "Browsertortu // Navegador Oficial de Baco";
+      contentHtml = `<div style="display:flex; flex-direction:column; height:100%; background:#02050b;">
+        <div style="display:flex; background:#0a1118; padding:6px; gap:6px; border-bottom:1px solid #00f3ff; align-items:center;">
+          <span style="font-size:1.1rem;">🐢</span>
+          <input type="text" id="tortu-url" value="https://example.com" style="flex:1; background:#02050b; border:1px solid #00f3ff; color:#00ff66; padding:6px; font-family:monospace; border-radius:4px;">
+          <button id="tortu-go" style="background:rgba(0,243,255,0.2); border:1px solid #00f3ff; color:#00f3ff; padding:6px 12px; cursor:pointer; font-family:monospace; border-radius:4px;">Navegar</button>
+        </div>
+        <iframe id="tortu-frame" src="https://example.com" style="flex:1; border:none; background:#fff;"></iframe>
       </div>`;
     }
 
@@ -67,7 +80,7 @@ class ChiquiOSKernel {
           <button class="win-btn btn-close" data-action="close" data-appid="${appId}"></button>
         </div>
       </div>
-      <div class="window-content" style="padding:0; overflow:hidden;">${contentHtml}</div>
+      <div class="window-content" style="${appId === 'browsertortu' ? 'padding:0; overflow:hidden;' : ''}">${contentHtml}</div>
     `;
 
     document.getElementById('desktop').appendChild(win);
@@ -75,29 +88,23 @@ class ChiquiOSKernel {
     this.updateTaskbar();
     this.setupWindowEvents(appId);
 
-    if (appId === 'terminal' && typeof V86Starter !== 'undefined') {
-      // Inicializar v86 con una imagen de Alpine Linux optimizada para web
-      try {
-        this.emulatorInstance = new V86Starter({
-          wasm_path: "https://cdn.jsdelivr.net/npm/v86@latest/build/v86.wasm",
-          memory_size: 64 * 1024 * 1024, // 64MB RAM virtual
-          vga_memory_size: 2 * 1024 * 1024,
-          screen_container: document.getElementById("screen_container"),
-          bios: { url: "https://cdn.jsdelivr.net/npm/v86@latest/bios/seabios.bin" },
-          vga_bios: { url: "https://cdn.jsdelivr.net/npm/v86@latest/bios/vgabios.bin" },
-          cdrom: { url: "https://copy.sh/v86/images/alpine.iso" }, // ISO oficial de Alpine de prueba
-          autostart: true
-        });
-      } catch (err) {
-        console.error("Error al iniciar v86:", err);
-      }
+    if (appId === 'terminal') {
+      initTerminal(this);
     } else if (appId === 'texteditor') {
       document.getElementById('nano-save').onclick = () => {
         const path = document.getElementById('nano-path').value;
         const text = document.getElementById('nano-text').value;
-        this.vfs[path] = text;
+        this.vfs[path] = { type: "file", content: text };
         this.saveState();
-        alert("¡Archivo guardado!");
+        alert("¡Archivo guardado en el VFS de chiquiOS!");
+      };
+    } else if (appId === 'browsertortu') {
+      document.getElementById('tortu-go').onclick = () => {
+        let targetUrl = document.getElementById('tortu-url').value;
+        if (!targetUrl.startsWith('http')) {
+          targetUrl = 'https://' + targetUrl;
+        }
+        document.getElementById('tortu-frame').src = targetUrl;
       };
     }
   }
@@ -126,17 +133,12 @@ class ChiquiOSKernel {
     win.querySelectorAll('.win-btn').forEach(btn => {
       btn.onclick = () => {
         const action = btn.dataset.action;
-        if (action === 'close') {
-          if (appId === 'terminal' && this.emulatorInstance) {
-            this.emulatorInstance.destroy();
-            this.emulatorInstance = null;
-          }
-          this.closeApp(appId);
-        }
+        if (action === 'close') this.closeApp(appId);
         if (action === 'min') win.classList.add('minimized');
         if (action === 'max') {
           if (win.style.width === '100vw') {
-            win.style.width = '640px'; win.style.height = '440px';
+            win.style.width = appId === 'terminal' ? '540px' : (appId === 'browsertortu' ? '580px' : '420px');
+            win.style.height = appId === 'terminal' ? '380px' : (appId === 'browsertortu' ? '420px' : '320px');
           } else {
             win.style.width = '100vw'; win.style.height = 'calc(100vh - 40px)';
             win.style.top = '0'; win.style.left = '0';
