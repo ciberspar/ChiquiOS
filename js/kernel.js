@@ -7,15 +7,17 @@ class ChiquiOSKernel {
       "/": { type: "dir", content: ["bin", "home", "etc", "root"] },
       "/bin": { type: "dir", content: ["bacus", "ls", "cat", "echo", "touch", "mkdir", "rm", "pwd", "clear"] },
       "/home": { type: "dir", content: ["user"] },
-      "/home/user": { type: "dir", content: ["welcome.txt"] },
+      "/home/user": { type: "dir", content: ["welcome.txt", "juego.py", "app.py"] },
       "/home/user/welcome.txt": { type: "file", content: "Bienvenido a chiquiOS v4.0.\nUn sistema operativo web nativo, libre y modular." },
+      "/home/user/juego.py": { type: "file", content: "# vscodebacus - Entorno para chiquiOS\ndef iniciar_juego():\n    print('¡Bienvenido a vscodebacus con Python!')\n    personaje = 'Baco'\n    print(f'Desarrollando apps y juegos con {personaje}')\n\niniciar_juego()" },
+      "/home/user/app.py": { type: "file", content: "# App de prueba\nprint('Hola desde app.py en chiquiOS')" },
       "/etc": { type: "dir", content: ["os-release", "hostname"] },
       "/etc/os-release": { type: "file", content: "NAME=\"chiquiOS\"\nID=chiquios\nVERSION=\"4.0-native\"" },
       "/etc/hostname": { type: "file", content: "chiquios-station" },
       "/root": { type: "dir", content: [] }
     };
 
-    this.packages = JSON.parse(localStorage.getItem('chiqui_pkgs')) || ["chiquios-core", "bacus-pm", "nanopad", "browsertortu"];
+    this.packages = JSON.parse(localStorage.getItem('chiqui_pkgs')) || ["chiquios-core", "bacus-pm", "nanopad", "browsertortu", "vscodebacus"];
     this.activeWindows = {};
     this.zIndexCounter = 100;
   }
@@ -39,8 +41,16 @@ class ChiquiOSKernel {
     win.style.zIndex = this.zIndexCounter;
     win.style.top = `${50 + (Object.keys(this.activeWindows).length * 25)}px`;
     win.style.left = `${80 + (Object.keys(this.activeWindows).length * 35)}px`;
-    win.style.width = appId === 'terminal' ? '540px' : (appId === 'browsertortu' ? '580px' : '420px');
-    win.style.height = appId === 'terminal' ? '380px' : (appId === 'browsertortu' ? '420px' : '320px');
+    
+    if (appId === 'terminal') {
+      win.style.width = '540px'; win.style.height = '380px';
+    } else if (appId === 'browsertortu') {
+      win.style.width = '580px'; win.style.height = '420px';
+    } else if (appId === 'vscodebacus') {
+      win.style.width = '640px'; win.style.height = '440px';
+    } else {
+      win.style.width = '420px'; win.style.height = '320px';
+    }
 
     let title = "Ventana";
     let contentHtml = "";
@@ -69,117 +79,15 @@ class ChiquiOSKernel {
         </div>
         <iframe id="tortu-frame" src="https://example.com" style="flex:1; border:none; background:#fff;"></iframe>
       </div>`;
-    }
-
-    win.innerHTML = `
-      <div class="window-header" data-appid="${appId}">
-        <span>${title}</span>
-        <div class="window-controls">
-          <button class="win-btn btn-min" data-action="min" data-appid="${appId}"></button>
-          <button class="win-btn btn-max" data-action="max" data-appid="${appId}"></button>
-          <button class="win-btn btn-close" data-action="close" data-appid="${appId}"></button>
+    } else if (appId === 'vscodebacus') {
+      title = "vscodebacus // IDE de Python & Apps de Baco";
+      contentHtml = `<div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; font-family:monospace; color:#d4d4d4;">
+        <div style="display:flex; background:#2d2d2d; padding:6px; gap:8px; align-items:center; border-bottom:1px solid #333;">
+          <span style="color:#00f3ff; font-weight:bold;">🐢 vscodebacus</span>
+          <select id="vsc-file-select" style="background:#1e1e1e; color:#fff; border:1px solid #444; padding:2px 6px;">
+            <option value="/home/user/juego.py">juego.py</option>
+            <option value="/home/user/app.py">app.py</option>
+          </select>
+          <button id="vsc-run" style="background:#0e639c; color:#fff; border:none; padding:4px 10px; cursor:pointer; border-radius:3px;">▶ Run Python</button>
         </div>
-      </div>
-      <div class="window-content" style="${appId === 'browsertortu' ? 'padding:0; overflow:hidden;' : ''}">${contentHtml}</div>
-    `;
-
-    document.getElementById('desktop').appendChild(win);
-    this.activeWindows[appId] = win;
-    this.updateTaskbar();
-    this.setupWindowEvents(appId);
-
-    if (appId === 'terminal') {
-      initTerminal(this);
-    } else if (appId === 'texteditor') {
-      document.getElementById('nano-save').onclick = () => {
-        const path = document.getElementById('nano-path').value;
-        const text = document.getElementById('nano-text').value;
-        this.vfs[path] = { type: "file", content: text };
-        this.saveState();
-        alert("¡Archivo guardado en el VFS de chiquiOS!");
-      };
-    } else if (appId === 'browsertortu') {
-      document.getElementById('tortu-go').onclick = () => {
-        let targetUrl = document.getElementById('tortu-url').value;
-        if (!targetUrl.startsWith('http')) {
-          targetUrl = 'https://' + targetUrl;
-        }
-        document.getElementById('tortu-frame').src = targetUrl;
-      };
-    }
-  }
-
-  setupWindowEvents(appId) {
-    const win = document.getElementById(`win-${appId}`);
-    const header = win.querySelector('.window-header');
-
-    header.onmousedown = (e) => {
-      this.bringToFront(appId);
-      let shiftX = e.clientX - win.getBoundingClientRect().left;
-      let shiftY = e.clientY - win.getBoundingClientRect().top;
-
-      function onMouseMove(event) {
-        win.style.left = `${event.clientX - shiftX}px`;
-        win.style.top = `${event.clientY - shiftY}px`;
-      }
-      function onMouseUp() {
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      }
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
-    };
-
-    win.querySelectorAll('.win-btn').forEach(btn => {
-      btn.onclick = () => {
-        const action = btn.dataset.action;
-        if (action === 'close') this.closeApp(appId);
-        if (action === 'min') win.classList.add('minimized');
-        if (action === 'max') {
-          if (win.style.width === '100vw') {
-            win.style.width = appId === 'terminal' ? '540px' : (appId === 'browsertortu' ? '580px' : '420px');
-            win.style.height = appId === 'terminal' ? '380px' : (appId === 'browsertortu' ? '420px' : '320px');
-          } else {
-            win.style.width = '100vw'; win.style.height = 'calc(100vh - 40px)';
-            win.style.top = '0'; win.style.left = '0';
-          }
-        }
-      };
-    });
-  }
-
-  closeApp(appId) {
-    if (this.activeWindows[appId]) {
-      this.activeWindows[appId].remove();
-      delete this.activeWindows[appId];
-      this.updateTaskbar();
-    }
-  }
-
-  bringToFront(appId) {
-    this.zIndexCounter++;
-    document.getElementById(`win-${appId}`).style.zIndex = this.zIndexCounter;
-  }
-
-  updateTaskbar() {
-    const taskbarApps = document.getElementById('taskbar-apps');
-    taskbarApps.innerHTML = '';
-    Object.keys(this.activeWindows).forEach(appId => {
-      const btn = document.createElement('button');
-      btn.className = 'taskbar-app active';
-      btn.textContent = appId.toUpperCase();
-      btn.onclick = () => {
-        const win = document.getElementById(`win-${appId}`);
-        if (win.classList.contains('minimized')) {
-          win.classList.remove('minimized');
-          this.bringToFront(appId);
-        } else {
-          win.classList.add('minimized');
-        }
-      };
-      taskbarApps.appendChild(btn);
-    });
-  }
-}
-
-window.chiquiOS = new ChiquiOSKernel();
+        <div style="display:flex;
