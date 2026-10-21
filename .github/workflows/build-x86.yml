@@ -1,0 +1,110 @@
+name: 🍓 Build chiquiOS X86 (Matrix x64 & x32)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-x86:
+    name: ⚙️ Build chiquiOS (${{ matrix.edition }} - ${{ matrix.name_suffix }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: cli
+            deb_arch: amd64
+            name_suffix: x64
+          - edition: cli
+            deb_arch: i386
+            name_suffix: x32
+          - edition: desktop
+            deb_arch: amd64
+            name_suffix: x64
+          - edition: desktop
+            deb_arch: i386
+            name_suffix: x32
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-common grub-efi-amd64-bin curl git
+
+      - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
+        run: |
+          sudo mkdir -p /tmp/chiquios-rootfs
+          sudo debootstrap --arch=${{ matrix.deb_arch }} --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
+
+      - name: 🎨 Install Desktop UI (Solo versión Desktop)
+        if: matrix.edition == 'desktop'
+        run: |
+          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              xorg lxde-core pcmanfm lxpanel openbox lightdm netsurf-gtk sudo curl ca-certificates
+          "
+
+      - name: 🐢 Inject Bacusp & Custom Overlay
+        run: |
+          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp
+          sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
+          sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
+
+          if [ -d "overlay" ]; then
+            sudo cp -r overlay/* /tmp/chiquios-rootfs/ 2>/dev/null || true
+          fi
+
+          echo "chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
+
+      - name: 🔌 Configure Bootloader & Kernel (${{ matrix.name_suffix }})
+        run: |
+          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y linux-image-generic || apt-get install -y linux-image-amd64 || true
+          "
+
+          if [ "${{ matrix.deb_arch }}" = "amd64" ]; then
+            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-amd64"
+            sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
+            sudo cp /tmp/chiquios-rootfs/usr/lib/grub/x86_64-efi/monolithic/grubx64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
+          elif [ "${{ matrix.deb_arch }}" = "i386" ]; then
+            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
+          fi
+
+          # Configurar grub.cfg común
+          sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
+          echo 'set timeout=5' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'menuentry "chiquiOS (${{ matrix.edition }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '    linux /boot/vmlinuz-* root=/dev/vda1 rw quiet splash' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '    initrd /boot/initrd.img-*' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '}' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+
+      - name: 💿 Build ISO (BIOS for i386 / UEFI for amd64)
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/dist
+          if [ "${{ matrix.deb_arch }}" = "i386" ]; then
+            # Usar grub-mkrescue para empaquetar el arranque Legacy BIOS de 32 bits correctamente
+            sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
+          else
+            # Generar ISO UEFI para amd64
+            sudo xorriso -as mkisofs -iso-level 3 -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
+              -full-iso9660-filenames -volid "CHIQUIOS" \
+              -eltorito-alt-boot \
+              -e EFI/BOOT/boot.img -no-emul-boot \
+              /tmp/chiquios-rootfs/ 2>/dev/null || \
+            sudo genisoimage -J -R -V "CHIQUIOS" -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
+          fi
+
+      - name: 🚀 Upload X86 ISO Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}
+          path: dist/*.iso
