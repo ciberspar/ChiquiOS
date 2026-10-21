@@ -8,7 +8,6 @@ on:
 jobs:
   build-arm:
     name: ⚙️ Build chiquiOS (${{ matrix.edition }} - arm64)
-    # Usamos el runner nativo ARM de GitHub
     runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
@@ -59,12 +58,10 @@ jobs:
             apt-get install -y linux-image-arm64 grub-efi-arm64
           "
           
-          # Estructura UEFI requerida por UTM y hardware ARM
           sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
           sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/monolithic/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || \
           sudo cp /tmp/chiquios-rootfs/boot/efi/EFI/boot/bootaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
 
-          # Configurar GRUB
           sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
           echo 'set timeout=5' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
