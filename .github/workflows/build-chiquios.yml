@@ -1,0 +1,62 @@
+name: 🍓 Build chiquiOS (Debian + PIXEL Desktop)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-os:
+    name: ⚙️ Bootstrapping chiquiOS Engine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Install Build Tools & Bootstrap Utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso curl git
+
+      - name: 🐧 Bootstrap Debian Bookworm Base
+        run: |
+          echo "🌀 Creando el entorno base Debian para chiquiOS..."
+          sudo mkdir -p /tmp/chiquios-rootfs
+          sudo debootstrap --arch=amd64 --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
+
+      - name: 🍓 Install LXDE / PIXEL Desktop & Utilities
+        run: |
+          echo "🎨 Configurando interfaz visual PIXEL..."
+          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              dialog whiptail xorg lxde-core pcmanfm lxpanel openbox lightdm \
+              sudo curl wget ca-certificates
+          "
+
+      - name: 🐢 Inject Bacusp Engine into chiquiOS
+        run: |
+          echo "📦 Instalando Bacusp v5.1 como Gestor de Paquetes Nativo..."
+          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp
+          
+          # Clonar o descargar la última versión de Bacusp directamente al SO
+          sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
+          sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
+          
+          # Nombre de host oficial del sistema
+          echo "chiquiOS" | sudo tee /tmp/chiquios-rootfs/etc/hostname
+
+      - name: 📦 Compress Rootfs & Generate Image
+        run: |
+          echo "🗜️ Empaquetando chiquiOS..."
+          mkdir -p $GITHUB_WORKSPACE/dist
+          cd /tmp
+          sudo tar -czvf $GITHUB_WORKSPACE/dist/chiquiOS-rootfs-amd64.tar.gz chiquios-rootfs/
+
+      - name: 🚀 Upload chiquiOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquiOS-v1.0-Debian-PIXEL
+          path: dist/chiquiOS-rootfs-amd64.tar.gz
