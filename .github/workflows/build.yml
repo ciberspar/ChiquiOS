@@ -40,7 +40,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools qemu-user-static qemu-system-x86 binfmt-support curl git
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools qemu-user-static qemu-system-x86 ovmf binfmt-support curl git
 
       - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
         run: |
@@ -57,19 +57,7 @@ jobs:
               xorg lxde-core pcmanfm lxpanel openbox lightdm netsurf-gtk sudo curl ca-certificates
           "
 
-      - name: 🐢 Inject Bacusp & Custom Overlay
-        run: |
-          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp
-          sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
-          sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
-
-          if [ -d "overlay" ]; then
-            sudo cp -r overlay/* /tmp/chiquios-rootfs/ 2>/dev/null || true
-          fi
-
-          echo "chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
-
-      - name: 🔌 Configure Kernel & Bootloader (${{ matrix.name_suffix }})
+      - name: 🐢 Install Kernel & Core Packages (${{ matrix.name_suffix }})
         run: |
           sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
             export DEBIAN_FRONTEND=noninteractive
@@ -77,14 +65,14 @@ jobs:
             apt-get install -y linux-image-generic || apt-get install -y linux-image-amd64 || apt-get install -y linux-image-arm64 || true
           "
 
-          # Normalizar los nombres del kernel e initrd
+          # Normalizar los nombres del kernel e initrd en el rootfs
           sudo bash -c '
             cd /tmp/chiquios-rootfs/boot
             cp vmlinuz-* vmlinuz 2>/dev/null || true
             cp initrd.img-* initrd.img 2>/dev/null || true
           '
 
-          # Instalar el bootloader correspondiente dentro del chroot
+          # Instalar paquetes de bootloader dentro del chroot según la arquitectura
           if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-arm64-bin grub-efi-arm64"
             sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
@@ -96,25 +84,38 @@ jobs:
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
           fi
 
-          # Configuración de GRUB Directa (timeout=0 para arranque inmediato)
-          sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
-          echo 'set timeout=0' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo 'menuentry "chiquiOS Ultra (${{ matrix.edition }} - ${{ matrix.name_suffix }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo '    linux /boot/vmlinuz root=/dev/vda1 rw acpi=force noapic nolapic fastboot tsc=reliable nowatchdog' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo '    initrd /boot/initrd.img' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo '}' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+      - name: 📁 Inject chiquiOS Custom Tree & Bacusp
+        run: |
+          # 1. Inyectamos tu gestor bacusp
+          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp
+          sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
+          sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
+
+          # 2. Copiamos toda tu estructura local de la carpeta chiquiOS/ (boot, etc, usr, etc.)
+          if [ -d "chiquiOS" ]; then
+            sudo cp -r chiquiOS/* /tmp/chiquios-rootfs/ 2>/dev/null || true
+          fi
+
+          # Dar permisos de ejecución a cualquier binario que hayas puesto en usr/local/bin
+          if [ -d "/tmp/chiquios-rootfs/usr/local/bin" ]; then
+            sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/* 2>/dev/null || true
+          fi
+
+          # Si no creaste un hostname propio en tu carpeta, le ponemos uno por defecto
+          if [ ! -f "/tmp/chiquios-rootfs/etc/hostname" ]; then
+            echo "chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
+          fi
 
       - name: 🍃 Slim Down & Network On-Demand Tuning
         run: |
           sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
             export DEBIAN_FRONTEND=noninteractive
             
-            # Red y servicios pesados desactivados de base (se levantan a demanda)
+            # Red y servicios pesados desactivados de base
             systemctl disable NetworkManager.service networking.service wpa_supplicant.service bluetooth.service cups.service avahi-daemon.service ModemManager.service || true
             systemctl mask systemd-networkd-wait-online.service NetworkManager-wait-online.service || true
 
-            # Limpiar cachés y logs para aligerar la ISO al máximo
+            # Limpiar cachés y logs
             apt-get clean
             apt-get autoclean
             rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -145,7 +146,7 @@ jobs:
               -isohybrid-gpt-basdat \
               /tmp/chiquios-rootfs/
           else
-            # ISO Limpia con grub-mkrescue para x86 (x32 / x64)
+            # Construcción con grub-mkrescue para x86 (x32 / x64)
             sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
           fi
 
@@ -154,12 +155,18 @@ jobs:
         run: |
           mkdir -p $GITHUB_WORKSPACE/test-logs
           
-          QEMU_BIN="qemu-system-x86_64"
+          QEMU_CMD="qemu-system-x86_64"
+          EXTRA_ARGS=""
+          
           if [ "${{ matrix.deb_arch }}" = "i386" ]; then
-            QEMU_BIN="qemu-system-i386"
+            QEMU_CMD="qemu-system-i386"
+          else
+            if [ -f /usr/share/ovmf/OVMF.fd ]; then
+              EXTRA_ARGS="-bios /usr/share/ovmf/OVMF.fd"
+            fi
           fi
           
-          $QEMU_BIN \
+          $QEMU_CMD $EXTRA_ARGS \
             -m 512M \
             -cdrom dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
             -boot d \
