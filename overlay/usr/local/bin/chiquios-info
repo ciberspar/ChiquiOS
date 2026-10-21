@@ -1,0 +1,18 @@
+#!/bin/sh
+# chiquios-info - Información de chiquiOS
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+echo "${GREEN}"
+echo "   _ _ _ _   _ ____  ____"
+echo "  / ___| | | (_)  _ \/ ___|"
+echo " | |   | |_| | | |_) \___ \ "
+echo " | |___|  _  | |  __/ ___) |"
+echo "  \____|_| |_|_|_|   |____/ "
+echo "${NC}"
+echo " OS: chiquiOS v1.0 (Debian Bookworm)"
+echo " Desktop: PIXEL (LXDE Minimal)"
+echo " Package Manager: bacusp"
+echo " Kernel: $(uname -r)"
+echo " Memory: $(free -h | awk '/Mem:/ {print $3 "/" $2}')"
+echo " Mascot: Baco 🐢"
