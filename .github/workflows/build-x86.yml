@@ -78,7 +78,6 @@ jobs:
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
           fi
 
-          # Configurar grub.cfg común
           sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
           echo 'set timeout=5' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
@@ -91,10 +90,8 @@ jobs:
         run: |
           mkdir -p $GITHUB_WORKSPACE/dist
           if [ "${{ matrix.deb_arch }}" = "i386" ]; then
-            # Usar grub-mkrescue para empaquetar el arranque Legacy BIOS de 32 bits correctamente
             sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
           else
-            # Generar ISO UEFI para amd64
             sudo xorriso -as mkisofs -iso-level 3 -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
               -full-iso9660-filenames -volid "CHIQUIOS" \
               -eltorito-alt-boot \
