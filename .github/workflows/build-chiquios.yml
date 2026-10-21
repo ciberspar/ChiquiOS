@@ -1,4 +1,4 @@
-name: 🍓 Build chiquiOS Multi-Arch (x64, x32, ARM64)
+name: 🍓 Build chiquiOS (Debian + PIXEL)
 
 on:
   push:
@@ -6,55 +6,49 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-os:
-    name: ⚙️ Compilando chiquiOS (${{ matrix.arch }})
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            deb_arch: amd64
-            name_suffix: x64
-          - arch: i386
-            deb_arch: i386
-            name_suffix: x32
-          - arch: arm64
-            deb_arch: arm64
-            name_suffix: arm64
-
     steps:
-      - name: 📥 Checkout Repository
+      - name: 📥 Clonar Repositorio
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install Build Tools & Emulation
+      - name: 🛠️ Herramientas de Compilación
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso curl git qemu-user-static binfmt-support
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso curl git
 
-      - name: 🐧 Bootstrap Debian Base (${{ matrix.arch }})
+      - name: 🐧 Bootstrapping Debian Bookworm
         run: |
-          echo "🌀 Creando entorno chiquiOS para ${{ matrix.arch }}..."
           sudo mkdir -p /tmp/chiquios-rootfs
-          
-          # Usamos debootstrap con soporte para distintas arquitecturas
-          sudo debootstrap --arch=${{ matrix.deb_arch }} --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
+          sudo debootstrap --arch=amd64 --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
 
-      - name: 🐢 Inject Bacusp Engine into chiquiOS
+      - name: 🎨 Inyectar Código del Repositorio y PIXEL
         run: |
-          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp
+          # Copiar scripts propios del repo al rootfs
+          sudo cp -r overlay/* /tmp/chiquios-rootfs/ 2>/dev/null || true
+          sudo cp scripts/install-pixel.sh /tmp/chiquios-rootfs/tmp/
+          
+          # Dar permisos de ejecución a los binarios
+          sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/* 2>/dev/null || true
+          
+          # Ejecutar la instalación de PIXEL dentro de Debian
+          sudo chroot /tmp/chiquios-rootfs /bin/bash /tmp/install-pixel.sh
+          sudo rm /tmp/chiquios-rootfs/tmp/install-pixel.sh
+
+      - name: 🐢 Inyectar Gestor Bacusp
+        run: |
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
-          echo "chiquiOS-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
+          echo "chiquiOS" | sudo tee /tmp/chiquios-rootfs/etc/hostname
 
-      - name: 📦 Compress Rootfs for ${{ matrix.name_suffix }}
+      - name: 📦 Empaquetar
         run: |
-          echo "🗜️ Empaquetando chiquiOS para ${{ matrix.name_suffix }}..."
           mkdir -p $GITHUB_WORKSPACE/dist
           cd /tmp
-          sudo tar -czvf $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.name_suffix }}-rootfs.tar.gz chiquios-rootfs/
+          sudo tar -czvf $GITHUB_WORKSPACE/dist/chiquiOS-Debian-PIXEL-amd64.tar.gz chiquios-rootfs/
 
-      - name: 🚀 Upload Multi-Arch Artifacts
+      - name: 🚀 Subir Artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: chiquiOS-${{ matrix.name_suffix }}
+          name: chiquiOS-Debian-PIXEL
           path: dist/*.tar.gz
