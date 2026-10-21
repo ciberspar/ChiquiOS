@@ -91,7 +91,7 @@ jobs:
             sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/monolithic/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || \
             sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
           elif [ "${{ matrix.deb_arch }}" = "amd64" ]; then
-            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-amd64-bin grub-efi-amd64"
+            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-amd64-bin grub-efi-amd64 grub-pc-bin"
             sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
             sudo cp /tmp/chiquios-rootfs/usr/lib/grub/x86_64-efi/monolithic/grubx64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTX64.EFI 2>/dev/null || \
             sudo cp /tmp/chiquios-rootfs/usr/lib/grub/x86_64-efi/grubx64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
@@ -99,9 +99,9 @@ jobs:
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
           fi
 
-          # Configuración de GRUB Ultra-Rápida y Universal
+          # Configuración de GRUB Directa (timeout=0 para arranque inmediato)
           sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
-          echo 'set timeout=1' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'set timeout=0' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo 'menuentry "chiquiOS Ultra (${{ matrix.edition }} - ${{ matrix.name_suffix }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo '    linux /boot/vmlinuz root=/dev/vda1 rw acpi=force noapic nolapic fastboot tsc=reliable nowatchdog' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
@@ -130,8 +130,12 @@ jobs:
           if [ "${{ matrix.deb_arch }}" = "i386" ]; then
             # BIOS / El Torito con grub-mkrescue para x32
             sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
+          elif [ "${{ matrix.deb_arch }}" = "amd64" ]; then
+            # Híbrido Universal para x64 (Compatible con BIOS y UEFI para evitar fallos en QEMU y hardware real)
+            sudo mkdir -p /tmp/chiquios-rootfs/boot/grub/i386-pc
+            sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
           else
-            # UEFI Híbrido Definitivo para x64
+            # UEFI Puro para arm64
             EFI_IMG="/tmp/chiquios-rootfs/boot/grub/efiboot.img"
             sudo dd if=/dev/zero of=$EFI_IMG bs=1M count=8 status=none
             sudo mkfs.vfat $EFI_IMG >/dev/null
@@ -139,8 +143,7 @@ jobs:
             sudo mkdir -p /tmp/efi_mount
             sudo mount -o loop $EFI_IMG /tmp/efi_mount
             sudo mkdir -p /tmp/efi_mount/EFI/BOOT
-            
-            sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTX64.EFI /tmp/efi_mount/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
+            sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI /tmp/efi_mount/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg /tmp/efi_mount/EFI/BOOT/grub.cfg 2>/dev/null || true
             sudo umount /tmp/efi_mount
 
