@@ -40,7 +40,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-common mtools dosfstools qemu-user-static binfmt-support curl git
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-common mtools dosfstools qemu-user-static qemu-system-x86 binfmt-support curl git
 
       - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
         run: |
@@ -113,7 +113,7 @@ jobs:
           sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
             export DEBIAN_FRONTEND=noninteractive
             
-            # Matar demonios de red pesados en el arranque: la red se levanta a demanda cuando el usuario quiera
+            # Red y servicios pesados desactivados de base (se levantan a demanda)
             systemctl disable NetworkManager.service networking.service wpa_supplicant.service bluetooth.service cups.service avahi-daemon.service ModemManager.service || true
             systemctl mask systemd-networkd-wait-online.service NetworkManager-wait-online.service || true
 
@@ -131,7 +131,7 @@ jobs:
             # BIOS / El Torito con grub-mkrescue para x32
             sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
           else
-            # UEFI Híbrido Definitivo (creando la partición efiboot.img para evitar fallos de booteo UEFI)
+            # UEFI Híbrido Definitivo para x64
             EFI_IMG="/tmp/chiquios-rootfs/boot/grub/efiboot.img"
             sudo dd if=/dev/zero of=$EFI_IMG bs=1M count=8 status=none
             sudo mkfs.vfat $EFI_IMG >/dev/null
@@ -140,16 +140,10 @@ jobs:
             sudo mount -o loop $EFI_IMG /tmp/efi_mount
             sudo mkdir -p /tmp/efi_mount/EFI/BOOT
             
-            if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
-              sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI /tmp/efi_mount/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
-            else
-              sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTX64.EFI /tmp/efi_mount/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
-            fi
-            
+            sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTX64.EFI /tmp/efi_mount/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg /tmp/efi_mount/EFI/BOOT/grub.cfg 2>/dev/null || true
             sudo umount /tmp/efi_mount
 
-            # Empaquetar la ISO UEFI universal con soporte GPT/MBR híbrido
             sudo xorriso -as mkisofs -iso-level 3 \
               -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
               -full-iso9660-filenames -volid "CHIQUIOS" \
@@ -159,7 +153,28 @@ jobs:
               /tmp/chiquios-rootfs/
           fi
 
-      - name: 🚀 Upload ISO Artifact
+      - name: 🖥️ Automated Boot Test (Solo x86)
+        if: matrix.deb_arch != 'arm64'
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/test-logs
+          
+          # Levantar QEMU en segundo plano capturando los logs de consola del kernel
+          qemu-system-x86_64 \
+            -m 512M \
+            -cdrom dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
+            -boot d \
+            -nographic \
+            -no-reboot \
+            > $GITHUB_WORKSPACE/test-logs/boot-output.txt 2>&1 &
+          
+          QEMU_PID=$!
+          sleep 20
+          kill $QEMU_PID || true
+          
+          echo "=== LOG DE LA PANTALLA VIRTUAL (BOOT TEST X86) ==="
+          cat $GITHUB_WORKSPACE/test-logs/boot-output.txt
+
+      - name: 📦 Upload ISO Artifact & Logs
         uses: actions/upload-artifact@v4
         with:
           name: chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}
