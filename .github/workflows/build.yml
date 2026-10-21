@@ -77,14 +77,14 @@ jobs:
             apt-get install -y linux-image-generic || apt-get install -y linux-image-amd64 || apt-get install -y linux-image-arm64 || true
           "
 
-          # Normalizar los nombres del kernel e initrd para evitar fallos con asteriscos
+          # Normalizar los nombres del kernel e initrd para evitar fallos de nombres
           sudo bash -c '
             cd /tmp/chiquios-rootfs/boot
             cp vmlinuz-* vmlinuz 2>/dev/null || true
             cp initrd.img-* initrd.img 2>/dev/null || true
           '
 
-          # Instalar el bootloader correspondiente dentro de cada entorno
+          # Instalar el bootloader correspondiente de forma blindada
           if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-arm64-bin grub-efi-arm64"
             sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
@@ -99,14 +99,29 @@ jobs:
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
           fi
 
-          # Configuración de GRUB Universal y blindada contra bloqueos
+          # Configuración de GRUB Ultra-Rápida y Universal
           sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
-          echo 'set timeout=3' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'set timeout=1' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo 'menuentry "chiquiOS Universal (${{ matrix.edition }} - ${{ matrix.name_suffix }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo '    linux /boot/vmlinuz root=/dev/vda1 rw acpi=force apic=debug noapic nolapic quiet splash' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'menuentry "chiquiOS Ultra (${{ matrix.edition }} - ${{ matrix.name_suffix }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '    linux /boot/vmlinuz root=/dev/vda1 rw acpi=force noapic nolapic fastboot tsc=reliable nowatchdog' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo '    initrd /boot/initrd.img' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo '}' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+
+      - name: 🍃 Slim Down & Network On-Demand Tuning
+        run: |
+          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            
+            # Matar demonios de red pesados en el arranque: la red se levanta a demanda cuando el usuario quiera
+            systemctl disable NetworkManager.service networking.service wpa_supplicant.service bluetooth.service cups.service avahi-daemon.service ModemManager.service || true
+            systemctl mask systemd-networkd-wait-online.service NetworkManager-wait-online.service || true
+
+            # Limpiar cachés y logs para aligerar la ISO al máximo
+            apt-get clean
+            apt-get autoclean
+            rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+          "
 
       - name: 💿 Build Bootable ISO (${{ matrix.name_suffix }})
         run: |
@@ -116,7 +131,7 @@ jobs:
             # BIOS / El Torito con grub-mkrescue para x32
             sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
           else
-            # UEFI Definitivo para x64 y arm64 (Creación de partición de arranque efiboot.img)
+            # UEFI Híbrido Definitivo (creando la partición efiboot.img para evitar fallos de booteo UEFI)
             EFI_IMG="/tmp/chiquios-rootfs/boot/grub/efiboot.img"
             sudo dd if=/dev/zero of=$EFI_IMG bs=1M count=8 status=none
             sudo mkfs.vfat $EFI_IMG >/dev/null
@@ -134,7 +149,7 @@ jobs:
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg /tmp/efi_mount/EFI/BOOT/grub.cfg 2>/dev/null || true
             sudo umount /tmp/efi_mount
 
-            # Empaquetar la ISO UEFI universal con xorriso
+            # Empaquetar la ISO UEFI universal con soporte GPT/MBR híbrido
             sudo xorriso -as mkisofs -iso-level 3 \
               -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
               -full-iso9660-filenames -volid "CHIQUIOS" \
