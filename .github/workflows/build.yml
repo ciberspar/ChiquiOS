@@ -40,7 +40,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-common mtools dosfstools qemu-user-static qemu-system-x86 isolinux syslinux-common binfmt-support curl git
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools qemu-user-static qemu-system-x86 binfmt-support curl git
 
       - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
         run: |
@@ -77,30 +77,30 @@ jobs:
             apt-get install -y linux-image-generic || apt-get install -y linux-image-amd64 || apt-get install -y linux-image-arm64 || true
           "
 
-          # Normalizar los nombres del kernel e initrd para evitar fallos de nombres
+          # Normalizar los nombres del kernel e initrd
           sudo bash -c '
             cd /tmp/chiquios-rootfs/boot
             cp vmlinuz-* vmlinuz 2>/dev/null || true
             cp initrd.img-* initrd.img 2>/dev/null || true
           '
 
-          # Instalar el bootloader correspondiente de forma blindada
+          # Instalar el bootloader correspondiente dentro del chroot
           if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-arm64-bin grub-efi-arm64"
             sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
             sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/monolithic/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || \
             sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
+          elif [ "${{ matrix.deb_arch }}" = "amd64" ]; then
+            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub-efi-amd64-bin grub2-common"
           else
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
-            # Instalar GRUB para BIOS dentro del rootfs de manera preventiva
-            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "grub-install --target=i386-pc --boot-directory=/boot --no-floppy --modules='biosdisk part_msdos' /dev/null" || true
           fi
 
           # Configuración de GRUB Directa (timeout=0 para arranque inmediato)
           sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
           echo 'set timeout=0' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo 'menuentry "chiquiOS Ultra (${{ matrix.edition }} -${{ matrix.name_suffix }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'menuentry "chiquiOS Ultra (${{ matrix.edition }} - ${{ matrix.name_suffix }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo '    linux /boot/vmlinuz root=/dev/vda1 rw acpi=force noapic nolapic fastboot tsc=reliable nowatchdog' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo '    initrd /boot/initrd.img' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo '}' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
@@ -133,4 +133,49 @@ jobs:
             sudo mkdir -p /tmp/efi_mount
             sudo mount -o loop $EFI_IMG /tmp/efi_mount
             sudo mkdir -p /tmp/efi_mount/EFI/BOOT
-            sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI /tmp/efi_mount/EFI/BOOT/BOOTAA
+            sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI /tmp/efi_mount/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
+            sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg /tmp/efi_mount/EFI/BOOT/grub.cfg 2>/dev/null || true
+            sudo umount /tmp/efi_mount
+
+            sudo xorriso -as mkisofs -iso-level 3 \
+              -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
+              -full-iso9660-filenames -volid "CHIQUIOS" \
+              -eltorito-alt-boot \
+              -e boot/grub/efiboot.img -no-emul-boot \
+              -isohybrid-gpt-basdat \
+              /tmp/chiquios-rootfs/
+          else
+            # ISO Limpia con grub-mkrescue para x86 (x32 / x64)
+            sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
+          fi
+
+      - name: 🖥️ Automated Boot Test (Solo x86 - 5 Minutos)
+        if: matrix.deb_arch != 'arm64'
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/test-logs
+          
+          QEMU_BIN="qemu-system-x86_64"
+          if [ "${{ matrix.deb_arch }}" = "i386" ]; then
+            QEMU_BIN="qemu-system-i386"
+          fi
+          
+          $QEMU_BIN \
+            -m 512M \
+            -cdrom dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
+            -boot d \
+            -nographic \
+            -no-reboot \
+            > $GITHUB_WORKSPACE/test-logs/boot-output.txt 2>&1 &
+          
+          QEMU_PID=$!
+          sleep 300
+          kill $QEMU_PID || true
+          
+          echo "=== LOG DE LA PANTALLA VIRTUAL (BOOT TEST X86 - 5 MINS) ==="
+          cat $GITHUB_WORKSPACE/test-logs/boot-output.txt
+
+      - name: 📦 Upload ISO Artifact & Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}
+          path: dist/*.iso
