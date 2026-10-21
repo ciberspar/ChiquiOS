@@ -77,6 +77,13 @@ jobs:
             apt-get install -y linux-image-generic || apt-get install -y linux-image-amd64 || apt-get install -y linux-image-arm64 || true
           "
 
+          # Normalizar los nombres del kernel e initrd para evitar errores de comodines en GRUB
+          sudo bash -c '
+            cd /tmp/chiquios-rootfs/boot
+            cp vmlinuz-* vmlinuz 2>/dev/null || true
+            cp initrd.img-* initrd.img 2>/dev/null || true
+          '
+
           # Instalar y configurar el bootloader específico dentro del entorno de cada arquitectura
           if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-arm64"
@@ -90,13 +97,13 @@ jobs:
             sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
           fi
 
-          # Configuración de GRUB común
+          # Configuración de GRUB apuntando a los nombres fijos y limpios
           sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
-          echo 'set timeout=5' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'set timeout=3' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo 'menuentry "chiquiOS (${{ matrix.edition }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo '    linux /boot/vmlinuz-* root=/dev/vda1 rw quiet splash' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
-          echo '    initrd /boot/initrd.img-*' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'menuentry "chiquiOS (${{ matrix.edition }} - ${{ matrix.name_suffix }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '    linux /boot/vmlinuz root=/dev/vda1 rw quiet splash' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '    initrd /boot/initrd.img' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
           echo '}' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
 
       - name: 💿 Build Bootable ISO (${{ matrix.name_suffix }})
