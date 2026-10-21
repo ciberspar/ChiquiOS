@@ -1,4 +1,4 @@
-name: 🍓 Build chiquiOS (Debian + PIXEL)
+name: 🍓 Build chiquiOS (Matrix Multi-Arch & Multi-Edition)
 
 on:
   push:
@@ -6,49 +6,85 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-matrix:
+    name: ⚙️ Build ${{ matrix.edition }} (${{ matrix.name_suffix }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # --- VERSIONES CLI ---
+          - edition: cli
+            arch: amd64
+            deb_arch: amd64
+            name_suffix: x64
+          - edition: cli
+            arch: i386
+            deb_arch: i386
+            name_suffix: x32
+          - edition: cli
+            arch: arm64
+            deb_arch: arm64
+            name_suffix: arm64
+
+          # --- VERSIONES DESKTOP (PIXEL) ---
+          - edition: desktop
+            arch: amd64
+            deb_arch: amd64
+            name_suffix: x64
+          - edition: desktop
+            arch: i386
+            deb_arch: i386
+            name_suffix: x32
+          - edition: desktop
+            arch: arm64
+            deb_arch: arm64
+            name_suffix: arm64
+
     steps:
-      - name: 📥 Clonar Repositorio
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Herramientas de Compilación
+      - name: 🛠️ Install Build Tools & Emulation
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso curl git
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso curl git qemu-user-static binfmt-support
 
-      - name: 🐧 Bootstrapping Debian Bookworm
+      - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
         run: |
           sudo mkdir -p /tmp/chiquios-rootfs
-          sudo debootstrap --arch=amd64 --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
+          sudo debootstrap --arch=${{ matrix.deb_arch }} --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
 
-      - name: 🎨 Inyectar Código del Repositorio y PIXEL
+      - name: 🎨 Install Desktop UI (Solo si es versión Desktop)
+        if: matrix.edition == 'desktop'
         run: |
-          # Copiar scripts propios del repo al rootfs
-          sudo cp -r overlay/* /tmp/chiquios-rootfs/ 2>/dev/null || true
-          sudo cp scripts/install-pixel.sh /tmp/chiquios-rootfs/tmp/
-          
-          # Dar permisos de ejecución a los binarios
-          sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/* 2>/dev/null || true
-          
-          # Ejecutar la instalación de PIXEL dentro de Debian
-          sudo chroot /tmp/chiquios-rootfs /bin/bash /tmp/install-pixel.sh
-          sudo rm /tmp/chiquios-rootfs/tmp/install-pixel.sh
+          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              xorg lxde-core pcmanfm lxpanel openbox lightdm netsurf-gtk sudo curl ca-certificates
+          "
 
-      - name: 🐢 Inyectar Gestor Bacusp
+      - name: 🐢 Inject Bacusp & Custom Overlay
         run: |
+          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
-          echo "chiquiOS" | sudo tee /tmp/chiquios-rootfs/etc/hostname
 
-      - name: 📦 Empaquetar
+          # Copiar overlay del repo si existe
+          if [ -d "overlay" ]; then
+            sudo cp -r overlay/* /tmp/chiquios-rootfs/ 2>/dev/null || true
+          fi
+
+          echo "chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
+
+      - name: 📦 Compress Rootfs Artifact
         run: |
           mkdir -p $GITHUB_WORKSPACE/dist
           cd /tmp
-          sudo tar -czvf $GITHUB_WORKSPACE/dist/chiquiOS-Debian-PIXEL-amd64.tar.gz chiquios-rootfs/
+          sudo tar -czvf $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.tar.gz chiquios-rootfs/
 
-      - name: 🚀 Subir Artefacto
+      - name: 🚀 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chiquiOS-Debian-PIXEL
+          name: chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}
           path: dist/*.tar.gz
