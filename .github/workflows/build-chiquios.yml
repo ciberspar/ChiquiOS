@@ -1,4 +1,4 @@
-name: 🍓 Build chiquiOS (Matrix Multi-Arch & Multi-Edition)
+name: 🍓 Build chiquiOS (Matrix Multi-Arch ISO)
 
 on:
   push:
@@ -10,33 +10,28 @@ jobs:
     name: ⚙️ Build ${{ matrix.edition }} (${{ matrix.name_suffix }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           # --- VERSIONES CLI ---
           - edition: cli
-            arch: amd64
             deb_arch: amd64
             name_suffix: x64
           - edition: cli
-            arch: i386
             deb_arch: i386
             name_suffix: x32
           - edition: cli
-            arch: arm64
             deb_arch: arm64
             name_suffix: arm64
 
           # --- VERSIONES DESKTOP (PIXEL) ---
           - edition: desktop
-            arch: amd64
             deb_arch: amd64
             name_suffix: x64
           - edition: desktop
-            arch: i386
             deb_arch: i386
             name_suffix: x32
           - edition: desktop
-            arch: arm64
             deb_arch: arm64
             name_suffix: arm64
 
@@ -54,7 +49,7 @@ jobs:
           sudo mkdir -p /tmp/chiquios-rootfs
           sudo debootstrap --arch=${{ matrix.deb_arch }} --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
 
-      - name: 🎨 Install Desktop UI (Solo si es versión Desktop)
+      - name: 🎨 Install Desktop UI (Solo versión Desktop)
         if: matrix.edition == 'desktop'
         run: |
           sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
@@ -70,21 +65,22 @@ jobs:
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
 
-          # Copiar overlay del repo si existe
+          # Copiar archivos propios del repo si existe la carpeta overlay
           if [ -d "overlay" ]; then
             sudo cp -r overlay/* /tmp/chiquios-rootfs/ 2>/dev/null || true
           fi
 
           echo "chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
 
-      - name: 📦 Compress Rootfs Artifact
+      - name: 💿 Build Bootable ISO
         run: |
           mkdir -p $GITHUB_WORKSPACE/dist
-          cd /tmp
-          sudo tar -czvf $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.tar.gz chiquios-rootfs/
+          sudo genisoimage -J -R -V "CHIQUIOS" \
+            -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
+            /tmp/chiquios-rootfs/
 
-      - name: 🚀 Upload Artifact
+      - name: 🚀 Upload ISO Artifact
         uses: actions/upload-artifact@v4
         with:
           name: chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}
-          path: dist/*.tar.gz
+          path: dist/*.iso
