@@ -1,4 +1,4 @@
-name: 🍓 Build chiquiOS (Matrix Multi-Arch ISO)
+name: 🍓 Build chiquiOS (Matrix Multi-Arch ISO with UEFI)
 
 on:
   push:
@@ -17,23 +17,29 @@ jobs:
           - edition: cli
             deb_arch: amd64
             name_suffix: x64
+            grub_target: x86_64-efi
           - edition: cli
             deb_arch: i386
             name_suffix: x32
+            grub_target: i386-pc
           - edition: cli
             deb_arch: arm64
             name_suffix: arm64
+            grub_target: arm64-efi
 
           # --- VERSIONES DESKTOP (PIXEL) ---
           - edition: desktop
             deb_arch: amd64
             name_suffix: x64
+            grub_target: x86_64-efi
           - edition: desktop
             deb_arch: i386
             name_suffix: x32
+            grub_target: i386-pc
           - edition: desktop
             deb_arch: arm64
             name_suffix: arm64
+            grub_target: arm64-efi
 
     steps:
       - name: 📥 Checkout Repository
@@ -42,7 +48,7 @@ jobs:
       - name: 🛠️ Install Build Tools & Emulation
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso curl git qemu-user-static binfmt-support
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-common curl git qemu-user-static binfmt-support
 
       - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
         run: |
@@ -65,19 +71,56 @@ jobs:
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
 
-          # Copiar archivos propios del repo si existe la carpeta overlay
           if [ -d "overlay" ]; then
             sudo cp -r overlay/* /tmp/chiquios-rootfs/ 2>/dev/null || true
           fi
 
           echo "chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
 
-      - name: 💿 Build Bootable ISO
+      - name: 🔌 Install Kernel & Configure Bootloader
+        run: |
+          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y linux-image-generic || apt-get install -y linux-image-amd64 || apt-get install -y linux-image-arm64 || apt-get install -y linux-image-rt-amd64 || true
+          "
+          # Instalar paquetes de GRUB EFI según corresponda
+          if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
+            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-arm64 grub-efi-arm64-bin"
+            sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
+            sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/monolithic/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI || \
+            sudo cp /tmp/chiquios-rootfs/boot/efi/EFI/boot/bootaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
+          elif [ "${{ matrix.deb_arch }}" = "amd64" ]; then
+            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-amd64 grub-efi-amd64-bin"
+            sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
+            sudo cp /tmp/chiquios-rootfs/usr/lib/grub/x86_64-efi/monolithic/grubx64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
+          fi
+
+          # Crear un grub.cfg básico para que levante automático
+          sudo mkdir -p /tmp/chiquios-rootfs/boot/grub
+          echo 'set timeout=5' | sudo tee /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'set default=0' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo 'menuentry "chiquiOS (${{ matrix.edition }})" {' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '    linux /boot/vmlinuz-* root=/dev/vda1 rw quiet splash' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '    initrd /boot/initrd.img-*' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+          echo '}' | sudo tee -a /tmp/chiquios-rootfs/boot/grub/grub.cfg
+
+      - name: 💿 Build Bootable UEFI/BIOS ISO
         run: |
           mkdir -p $GITHUB_WORKSPACE/dist
-          sudo genisoimage -J -R -V "CHIQUIOS" \
-            -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
-            /tmp/chiquios-rootfs/
+          # Usar xorriso para generar una ISO híbrida con soporte EFI si aplica
+          if [ "${{ matrix.deb_arch }}" = "arm64" ] || [ "${{ matrix.deb_arch }}" = "amd64" ]; then
+            sudo xorriso -as mkisofs -iso-level 3 -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
+              -full-iso9660-filenames -volid "CHIQUIOS" \
+              -eltorito-alt-boot \
+              -e EFI/BOOT/boot.img -no-emul-boot \
+              /tmp/chiquios-rootfs/ || \
+            sudo genisoimage -J -R -V "CHIQUIOS" -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
+          else
+            sudo genisoimage -J -R -V "CHIQUIOS" \
+              -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
+              /tmp/chiquios-rootfs/
+          fi
 
       - name: 🚀 Upload ISO Artifact
         uses: actions/upload-artifact@v4
