@@ -33,7 +33,7 @@ jobs:
       - name: 🛠️ Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-common grub-efi-amd64-bin curl git
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-common grub-efi-amd64-bin mtools curl git
 
       - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
         run: |
