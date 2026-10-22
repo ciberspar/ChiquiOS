@@ -53,9 +53,9 @@ jobs:
           sudo mount --bind /sys rootfs/sys
 
           if [ "${{ matrix.edition }}" = "desktop" ]; then
-            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd sysvinit-core lightdm lxde-core || true"
+            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd systemd-sysv lightdm lxde-core nano curl || true"
           else
-            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd sysvinit-core nano curl || true"
+            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd systemd-sysv nano curl || true"
           fi
 
           # Integración de bacus-pkg dentro del entorno chroot
