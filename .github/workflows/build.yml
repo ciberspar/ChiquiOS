@@ -104,13 +104,13 @@ jobs:
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg iso_root/boot/grub/grub.cfg
           fi
 
-          # Para x86 (i386 o amd64), generar el core El Torito HÍBRIDO (Pantallas + Terminales)
+          # Para x86 (i386 o amd64), generar el core El Torito HÍBRIDO corregido
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
             sudo mkdir -p iso_root/boot/grub/i386-pc
             
-            # Generar core de GRUB con drivers para pantallas (vga, vbe, video_bochs, gfxterm) y terminales (serial, terminal, console)
+            # Generar core de GRUB con los módulos reales disponibles en Debian
             sudo grub-mkimage -O i386-pc -o iso_root/boot/grub/i386-pc/eltorito.img -p /boot/grub \
-              iso9660 biosdisk normal test reboot halt vga vbe video_bochs video_cirrus gfxterm font video all_video serial terminal console
+              iso9660 biosdisk normal test reboot halt vga vbe video_bochs video_cirrus gfxterm font video all_video serial
             
             # Copiar todos los módulos de GRUB
             if [ -d "/usr/lib/grub/i386-pc" ]; then
