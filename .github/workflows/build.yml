@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [i386, amd64]
+        arch: [i386, amd64, arm64]
         edition: [cli, desktop]
 
     steps:
@@ -26,6 +26,7 @@ jobs:
             genisoimage \
             grub-pc-bin \
             grub-efi-amd64-bin \
+            grub-efi-arm64-bin \
             mtools \
             xorriso \
             squashfs-tools \
@@ -36,13 +37,12 @@ jobs:
           sudo mkdir -p iso_root/boot/grub
           sudo mkdir -p iso_root/live
 
-          # Simular o copiar los archivos base del sistema (kernel e initrd de prueba si no están armados)
-          # Si tu pipeline ya genera vmlinuz e initrd.img en chiquiOS/boot/ o live/, se copiarán solos.
+          # Copiar los archivos base del sistema desde la carpeta chiquiOS
           if [ -d "chiquiOS" ]; then
             sudo cp -r chiquiOS/* iso_root/ || true
           fi
 
-          # Asegurar que existan archivos mínimos para que no rompa el build si estás probando
+          # Asegurar archivos mínimos de respaldo
           if [ ! -f "iso_root/boot/vmlinuz" ] && [ -f "iso_root/vmlinuz" ]; then
             sudo cp iso_root/vmlinuz iso_root/boot/vmlinuz
           fi
@@ -52,7 +52,7 @@ jobs:
 
       - name: 📀 Generate ISO Image with Embedded Config
         run: |
-          # Copiar la configuración correcta de GRUB desde la ruta real del repo
+          # Seleccionar y copiar la configuración de GRUB según la edición
           if [ "${{ matrix.edition }}" = "desktop" ]; then
             if [ -f "chiquiOS/boot/grub/grub-desktop.cfg" ]; then
               sudo cp chiquiOS/boot/grub/grub-desktop.cfg iso_root/boot/grub/grub.cfg
@@ -63,8 +63,21 @@ jobs:
             fi
           fi
 
-          # Generar la ISO híbrida booteable con grub-mkrescue
-          sudo grub-mkrescue -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ -- -volid "CHIQUIOS"
+          # Generar la ISO según la arquitectura correspondiente
+          if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
+            # x86 usa grub-mkrescue (híbrido BIOS/UEFI)
+            sudo grub-mkrescue -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ -- -volid "CHIQUIOS"
+          else
+            # arm64 usa UEFI puro con genisoimage y grub-image EFI
+            sudo mkdir -p iso_root/EFI/BOOT
+            sudo grub-mkimage -O arm64-efi -o /tmp/BOOTAA64.EFI -p /boot/grub iso9660 normal test reboot halt serial || true
+            if [ -f "/tmp/BOOTAA64.EFI" ]; then
+              sudo cp /tmp/BOOTAA64.EFI iso_root/EFI/BOOT/BOOTAA64.EFI
+            fi
+            
+            sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames -volid "CHIQUIOS" \
+              -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
+          fi
 
       - name: 📦 Upload ISO Artifact
         uses: actions/upload-artifact@v4
