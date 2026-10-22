@@ -1,4 +1,4 @@
-name: Build ChiquiOS ISO
+name: Build ChiquiOS
 
 on:
   push:
@@ -8,123 +8,121 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-iso:
+  build:
+    name: Build ${{ matrix.edition }} (${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [i386, amd64, arm64]
+        arch: [i386, arm64]
         edition: [cli, desktop]
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install build tools & QEMU for Cross-Arch Chroot
+      - name: Set up QEMU and Binfmt
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y \
+            debootstrap \
             xorriso \
-            genisoimage \
-            grub-pc-bin \
             mtools \
-            squashfs-tools \
-            grub-common \
+            dosfstools \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
             qemu-user-static \
-            binfmt-support
+            binfmt-support \
+            docker.io
 
-      - name: 📦 Generate Base Debian Rootfs & Merge User Files
+      - name: Generate RootFS using Docker & Debian Base
         run: |
-          sudo mkdir -p iso_root
-          
-          # Mapeo de arquitectura para Docker
-          DOCKER_ARCH="${{ matrix.arch }}"
-          if [ "${{ matrix.arch }}" = "i386" ]; then
-            DOCKER_ARCH="386"
-          fi
+          docker pull debian:stable-slim
+          CONTAINER_ID=$(docker create debian:stable-slim)
+          mkdir -p rootfs
+          docker export $CONTAINER_ID | tar -C rootfs -x
+          docker rm $CONTAINER_ID
 
-          echo "Obteniendo sistema base Debian para $DOCKER_ARCH..."
-          docker pull --platform "linux/$DOCKER_ARCH" debian:stable-slim
-          CONTAINER_ID=$(docker create --platform "linux/$DOCKER_ARCH" debian:stable-slim)
-          docker export "$CONTAINER_ID" -o /tmp/debian-rootfs.tar
-          docker rm "$CONTAINER_ID"
-          
-          # Descomprimir la base de Debian en la raíz de la ISO
-          sudo tar -xf /tmp/debian-rootfs.tar -C iso_root/
-
-          # Si la edición es Desktop, inyectamos el entorno gráfico estilo PIXEL
-          if [ "${{ matrix.edition }}" = "desktop" ]; then
-            echo "🎨 Inyectando entorno de escritorio PIXEL / LXDE..."
-            
-            # Copiar emulador QEMU estático para permitir chroot multi-arquitectura
-            sudo cp /usr/bin/qemu-*-static iso_root/usr/bin/ 2>/dev/null || true
-
-            sudo mount --bind /dev iso_root/dev
-            sudo mount --bind /proc iso_root/proc
-            sudo mount --bind /sys iso_root/sys
-
-            sudo chroot iso_root /bin/bash -c "
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update && \
-              apt-get install -y --no-install-recommends \
-                xserver-xorg \
-                xinit \
-                lxde-core \
-                lightdm \
-                desktop-base \
-                openbox \
-                lxterminal \
-                pixman-1-0 || true
-              apt-get clean
-              rm -rf /var/lib/apt/lists/*
-            " || true
-
-            sudo umount iso_root/dev || true
-            sudo umount iso_root/proc || true
-            sudo umount iso_root/sys || true
-          fi
-          
-          # Fusionar las carpetas del usuario (boot, etc) encima del sistema base
-          if [ -d "chiquiOS" ]; then
-            sudo cp -r chiquiOS/* iso_root/ || true
-          fi
-
-          # Asegurar directorios críticos
-          sudo mkdir -p iso_root/boot/grub
-          sudo mkdir -p iso_root/live
-
-      - name: 📀 Generate ISO Image (Universal Hybrid)
+      - name: Configure Chroot and Install Packages
         run: |
-          # Copiar la configuración de GRUB según la edición
+          sudo cp /usr/bin/qemu-arm-static rootfs/usr/bin/ || true
+          sudo cp /usr/bin/qemu-i386-static rootfs/usr/bin/ || true
+
+          sudo mount --bind /dev rootfs/dev
+          sudo mount --bind /proc rootfs/proc
+          sudo mount --bind /sys rootfs/sys
+
           if [ "${{ matrix.edition }}" = "desktop" ]; then
-            if [ -f "iso_root/boot/grub/grub-desktop.cfg" ]; then
-              sudo cp iso_root/boot/grub/grub-desktop.cfg iso_root/boot/grub/grub.cfg
-            fi
+            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd sysvinit-core lightdm lxde-core || true"
           else
-            if [ -f "iso_root/boot/grub/grub-cli.cfg" ]; then
-              sudo cp iso_root/boot/grub/grub-cli.cfg iso_root/boot/grub/grub.cfg
-            fi
+            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd sysvinit-core nano curl || true"
           fi
 
-          if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # x86: Imagen híbrida con grub-mkrescue
-            sudo grub-mkrescue -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ -- -volid "CHIQUIOS"
+          sudo chroot rootfs bash -c "apt-get clean"
+          sudo umount rootfs/dev rootfs/proc rootfs/sys || true
+
+      - name: Build Real-PC Bootable ISO (i386 / x86)
+        if: matrix.arch == 'i386'
+        run: |
+          mkdir -p iso_root/boot/grub
+          sudo cp -a rootfs/* iso_root/
+          
+          # Configurar GRUB compatible para PCs reales (BIOS + UEFI)
+          cat << 'EOF' > iso_root/boot/grub/grub.cfg
+          set timeout=5
+          set default=0
+          menuentry "ChiquiOS i386 (${{ matrix.edition }})" {
+              linux /boot/vmlinuz root=/dev/sda1 ro quiet
+              initrd /boot/initrd.img
+          }
+          EOF
+
+          # Generar ISO híbrida apta para quemar en pendrive (Rufus/Ventoy) o PC real
+          xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "CHIQUIOS_PC" \
+            -output chiquiOS-${{ matrix.edition }}-i386.iso \
+            iso_root/
+
+      - name: Build UEFI Disk Image for ARM64 (Mobile/Emulators)
+        if: matrix.arch == 'arm64'
+        run: |
+          echo "Construyendo imagen UEFI FAT optimizada para ARM64..."
+          
+          IMG_SIZE="250M"
+          if [ "${{ matrix.edition }}" = "cli" ]; then
+            IMG_SIZE="120M"
+          }
+          
+          fallocate -l $IMG_SIZE chiquiOS-${{ matrix.edition }}-arm64.img
+          mkfs.vfat -F 32 chiquiOS-${{ matrix.edition }}-arm64.img
+
+          mmd -i chiquiOS-${{ matrix.edition }}-arm64.img ::EFI
+          mmd -i chiquiOS-${{ matrix.edition }}-arm64.img ::EFI\BOOT
+
+          sudo mkdir -p /tmp/efi_src
+          if [ -d "EFI/BOOT" ]; then
+            cp -r EFI/BOOT/* /tmp/efi_src/
           else
-            # arm64: UEFI puro para emuladores
-            sudo mkdir -p iso_root/EFI/BOOT
-            sudo wget -qO /tmp/BOOTAA64.EFI https://github.com/ciberspar/ChiquiOS/raw/main/EFI/BOOT/BOOTAA64.EFI || true
-            if [ -f "/tmp/BOOTAA64.EFI" ]; then
-              sudo cp /tmp/BOOTAA64.EFI iso_root/EFI/BOOT/BOOTAA64.EFI
-            fi
-            
-            sudo xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames \
-              -volid "CHIQUIOS" \
-              -output chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso \
-              iso_root/
+            sudo wget -qO /tmp/efi_src/BOOTAA64.EFI https://github.com/ciberspar/ChiquiOS/raw/main/EFI/BOOT/BOOTAA64.EFI || true
           fi
 
-      - name: 📦 Upload ISO Artifact
+          if [ -f "/tmp/efi_src/BOOTAA64.EFI" ]; then
+            mcopy -i chiquiOS-${{ matrix.edition }}-arm64.img /tmp/efi_src/BOOTAA64.EFI ::EFI\BOOT/BOOTAA64.EFI
+          fi
+
+          echo "fs0:\EFI\BOOT\BOOTAA64.EFI" > /tmp/startup.nsh
+          mcopy -i chiquiOS-${{ matrix.edition }}-arm64.img /tmp/startup.nsh ::startup.nsh
+
+          mv chiquiOS-${{ matrix.edition }}-arm64.img chiquiOS-${{ matrix.edition }}-arm64.iso
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}
           path: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso
+          compression-level: 6
