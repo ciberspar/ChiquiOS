@@ -19,7 +19,7 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install build tools
+      - name: 🛠️ Install build tools (Sin conflictos de Docker)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -28,14 +28,13 @@ jobs:
             grub-pc-bin \
             mtools \
             squashfs-tools \
-            grub-common \
-            docker.io
+            grub-common
 
       - name: 📦 Generate Base Debian Rootfs & Merge User Files
         run: |
           sudo mkdir -p iso_root
           
-          # Extraer el sistema base oficial de Debian usando Docker de forma ultrarrápida
+          # Docker ya está instalado nativamente en el runner; lo usamos directo
           echo "Obteniendo sistema base Debian..."
           docker pull debian:stable-slim
           CONTAINER_ID=$(docker create debian:stable-slim)
