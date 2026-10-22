@@ -1,158 +1,43 @@
-name: Build ChiquiOS
+name: Build ChiquiOS (Live-Build)
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
     branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build ${{ matrix.edition }} (${{ matrix.arch }})
+    name: Build ChiquiOS (${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [i386, amd64, arm64]
-        edition: [cli, desktop]
+        arch: [amd64, i386, arm64, ppc64el]
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU and Binfmt
-        uses: docker/setup-qemu-action@v3
-
-      - name: Install Build Dependencies
+      - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            debootstrap \
-            xorriso \
-            isolinux \
-            syslinux-utils \
-            mtools \
-            dosfstools \
-            qemu-user-static \
-            binfmt-support
+          sudo apt-get install -y live-build debootstrap xorriso mtools dosfstools qemu-user-static binfmt-support
 
-      - name: Generate RootFS using debootstrap
+      - name: Configure Live-Build
         run: |
-          sudo debootstrap --arch=${{ matrix.arch }} stable rootfs http://deb.debian.org/debian/ || \
-          sudo debootstrap --arch=amd64 stable rootfs http://deb.debian.org/debian/
+          lb config \
+            --architectures ${{ matrix.arch }} \
+            --distribution stable \
+            --binary-images iso-hybrid \
+            --apt-recommends false \
+            --bootloader isolinux
 
-      - name: Configure Chroot and Install Packages
+      - name: Build ISO
         run: |
-          sudo cp /usr/bin/qemu-arm-static rootfs/usr/bin/ || true
-          sudo cp /usr/bin/qemu-i386-static rootfs/usr/bin/ || true
-          sudo cp /usr/bin/qemu-x86_64-static rootfs/usr/bin/ || true
+          sudo lb build
 
-          sudo mount --bind /dev rootfs/dev
-          sudo mount --bind /proc rootfs/proc
-          sudo mount --bind /sys rootfs/sys
-
-          # Determinar el kernel según arquitectura
-          KERNEL_PKG="linux-image-686"
-          if [ "${{ matrix.arch }}" = "amd64" ]; then
-            KERNEL_PKG="linux-image-amd64"
-          elif [ "${{ matrix.arch }}" = "arm64" ]; then
-            KERNEL_PKG="linux-image-arm64"
-          fi
-
-          if [ "${{ matrix.edition }}" = "desktop" ]; then
-            sudo chroot rootfs bash -c "apt-get update && apt-get install -y $KERNEL_PKG systemd systemd-sysv lightdm lxde-core nano curl || true"
-          else
-            sudo chroot rootfs bash -c "apt-get update && apt-get install -y $KERNEL_PKG systemd systemd-sysv nano curl || true"
-          fi
-
-          # Integración de bacus-pkg dentro del entorno chroot
-          if [ -f "rootfs/usr/bin/bacus" ] || [ -d "rootfs/etc/bacus" ]; then
-            sudo chroot rootfs bash -c "bacus pkg update || true"
-          fi
-
-          sudo chroot rootfs bash -c "apt-get clean"
-          sudo umount rootfs/dev rootfs/proc rootfs/sys || true
-
-      - name: Build Real-PC Bootable ISO with ISOLINUX (i386 / amd64)
-        if: matrix.arch == 'i386' || matrix.arch == 'amd64'
-        run: |
-          # Eliminar completamente la carpeta de credenciales
-          sudo rm -rf rootfs/etc/credstore.encrypted || true
-
-          mkdir -p iso_root/isolinux
-          sudo cp -a rootfs/* iso_root/
-          
-          # Copiar físicamente el kernel y el initrd directo en isolinux/ para evitar errores de ruta
-          sudo cp -L rootfs/boot/vmlinuz-* iso_root/isolinux/vmlinuz || true
-          sudo cp -L rootfs/boot/initrd.img-* iso_root/isolinux/initrd.img || true
-
-          # Copiar binarios de ISOLINUX
-          cp /usr/lib/ISOLINUX/isolinux.bin iso_root/isolinux/
-          cp /usr/lib/syslinux/modules/bios/ldlinux.c32 iso_root/isolinux/ || true
-
-          # Crear archivo de configuración de ISOLINUX con rutas locales
-          cat << 'EOF' > iso_root/isolinux/isolinux.cfg
-          DEFAULT chiquios
-          TIMEOUT 50
-          PROMPT 1
-
-          LABEL chiquios
-              MENU LABEL ChiquiOS
-              KERNEL vmlinuz
-              INITRD initrd.img
-              APPEND root=/dev/sda1 ro quiet
-          EOF
-
-          # Ajustar permisos para lectura
-          sudo chmod -R a+r iso_root/
-
-          # Generar la ISO booteable con ISOLINUX
-          sudo xorriso -as mkisofs \
-            -iso-level 3 \
-            -full-iso9660-filenames \
-            -volid "CHIQUIOS_${{ matrix.arch }}" \
-            -b isolinux/isolinux.bin \
-            -c isolinux/boot.cat \
-            -no-emul-boot -boot-load-size 4 -boot-info-table \
-            -output chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso \
-            iso_root/
-
-      - name: Build UEFI Disk Image for ARM64 (Mobile/Emulators)
-        if: matrix.arch == 'arm64'
-        run: |
-          echo "Construyendo imagen UEFI FAT optimizada para ARM64..."
-          
-          IMG_SIZE="250M"
-          if [ "${{ matrix.edition }}" = "cli" ]; then
-            IMG_SIZE="120M"
-          fi
-          
-          fallocate -l $IMG_SIZE chiquiOS-${{ matrix.edition }}-arm64.img
-          mkfs.vfat -F 32 chiquiOS-${{ matrix.edition }}-arm64.img
-
-          mmd -i chiquiOS-${{ matrix.edition }}-arm64.img ::EFI
-          mmd -i chiquiOS-${{ matrix.edition }}-arm64.img ::EFI\BOOT
-
-          sudo mkdir -p /tmp/efi_src
-          if [ -d "EFI/BOOT" ]; then
-            cp -r EFI/BOOT/* /tmp/efi_src/
-          else
-            sudo wget -qO /tmp/efi_src/BOOTAA64.EFI https://github.com/ciberspar/ChiquiOS/raw/main/EFI/BOOT/BOOTAA64.EFI || true
-          fi
-
-          if [ -f "/tmp/efi_src/BOOTAA64.EFI" ]; then
-            mcopy -i chiquiOS-${{ matrix.edition }}-arm64.img /tmp/efi_src/BOOTAA64.EFI ::EFI\BOOT/BOOTAA64.EFI
-          fi
-
-          echo "fs0:\EFI\BOOT\BOOTAA64.EFI" > /tmp/startup.nsh
-          mcopy -i chiquiOS-${{ matrix.edition }}-arm64.img /tmp/startup.nsh ::startup.nsh
-
-          mv chiquiOS-${{ matrix.edition }}-arm64.img chiquiOS-${{ matrix.edition }}-arm64.iso
-
-      - name: Upload Artifacts
+      - name: Upload ISO Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}
-          path: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso
-          compression-level: 6
+          name: chiquiOS-${{ matrix.arch }}
+          path: live-image-${{ matrix.arch }}.hybrid.iso
