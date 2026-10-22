@@ -19,20 +19,20 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install lightweight tools
+      - name: 🛠️ Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            genisoimage \
-            syslinux \
-            syslinux-common \
-            mtools \
             xorriso \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
+            grub-efi-arm64-bin \
+            mtools \
             squashfs-tools
 
       - name: 📂 Prepare ISO Root Structure
         run: |
-          sudo mkdir -p iso_root/boot/syslinux
+          sudo mkdir -p iso_root/boot/grub
           sudo mkdir -p iso_root/live
 
           # Copiar los archivos base del sistema desde la carpeta chiquiOS
@@ -48,68 +48,33 @@ jobs:
             sudo cp iso_root/boot/initrd.img iso_root/initrd.img
           fi
 
-      - name: ⚙️ Configure Bootloaders
+      - name: 📀 Generate ISO Image (Clean Pipeline)
         run: |
-          # 1. Si es x86 (i386 / amd64), buscamos y copiamos isolinux.bin dinámicamente
-          if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            echo "Buscando isolinux.bin en el sistema..."
-            ISOLINUX_PATH=$(find /usr -name isolinux.bin 2>/dev/null | head -n 1)
-            
-            if [ -n "$ISOLINUX_PATH" ]; then
-              echo "Encontrado en: $ISOLINUX_PATH"
-              sudo cp "$ISOLINUX_PATH" iso_root/boot/syslinux/
-              # Copiar complementos necesarios (.c32) desde la misma ruta de origen
-              SRC_DIR=$(dirname "$ISOLINUX_PATH")
-              sudo cp "$SRC_DIR"/*.c32 iso_root/boot/syslinux/ || true
-            else
-              echo "¡Error! No se pudo localizar isolinux.bin en el sistema."
-              exit 1
+          # Copiar la configuración de GRUB según la edición
+          if [ "${{ matrix.edition }}" = "desktop" ]; then
+            if [ -f "chiquiOS/boot/grub/grub-desktop.cfg" ]; then
+              sudo cp chiquiOS/boot/grub/grub-desktop.cfg iso_root/boot/grub/grub.cfg
             fi
-
-            # Crear el archivo de configuración de Syslinux
-            sudo bash -c 'cat > iso_root/boot/syslinux/isolinux.cfg <<EOF
-            DEFAULT chiquios_normal
-            TIMEOUT 50
-            PROMPT 0
-
-            LABEL chiquios_normal
-              KERNEL /boot/vmlinuz
-              APPEND initrd=/initrd.img boot=live quiet splash
-
-            LABEL chiquios_safe
-              KERNEL /boot/vmlinuz
-              APPEND initrd=/initrd.img boot=live nomodeset vga=normal
-
-            LABEL chiquios_serial
-              KERNEL /boot/vmlinuz
-              APPEND initrd=/initrd.img boot=live console=tty0 console=ttyS0,115200n8 nomodeset
-            EOF'
           else
-            # 2. Si es arm64, preparamos el arranque UEFI puro
+            if [ -f "chiquiOS/boot/grub/grub-cli.cfg" ]; then
+              sudo cp chiquiOS/boot/grub/grub-cli.cfg iso_root/boot/grub/grub.cfg
+            fi
+          fi
+
+          if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
+            # x86: Generar imagen híbrida con grub-mkrescue (sin buscar binarios externos)
+            sudo grub-mkrescue -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ -- -volid "CHIQUIOS"
+          else
+            # arm64: UEFI puro para emuladores
             sudo mkdir -p iso_root/EFI/BOOT
-            sudo apt-get install -y --no-install-recommends grub-efi-arm64-bin || true
             sudo grub-mkimage -O arm64-efi -o /tmp/BOOTAA64.EFI -p /boot/grub iso9660 normal test reboot halt serial || true
             if [ -f "/tmp/BOOTAA64.EFI" ]; then
               sudo cp /tmp/BOOTAA64.EFI iso_root/EFI/BOOT/BOOTAA64.EFI
             fi
-          fi
-
-      - name: 📀 Generate ISO Image
-        run: |
-          if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # Generar ISO x86 con Syslinux usando búsqueda dinámica
-            sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames \
+            
+            sudo xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames \
               -volid "CHIQUIOS" \
-              -c boot/syslinux/boot.cat \
-              -b boot/syslinux/isolinux.bin \
-              -no-emul-boot -boot-load-size 4 -boot-info-table \
-              -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso \
-              iso_root/
-          else
-            # Generar ISO arm64 UEFI puro
-            sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames \
-              -volid "CHIQUIOS" \
-              -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso \
+              -output chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso \
               iso_root/
           fi
 
