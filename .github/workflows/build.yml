@@ -11,6 +11,7 @@ jobs:
   build-iso:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         arch: [i386, amd64, arm64]
         edition: [cli, desktop]
@@ -19,7 +20,7 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install build tools (Sin conflictos de Docker)
+      - name: 🛠️ Install build tools & QEMU for Cross-Arch Chroot
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -28,31 +29,69 @@ jobs:
             grub-pc-bin \
             mtools \
             squashfs-tools \
-            grub-common
+            grub-common \
+            qemu-user-static \
+            binfmt-support
 
       - name: 📦 Generate Base Debian Rootfs & Merge User Files
         run: |
           sudo mkdir -p iso_root
           
-          # Docker ya está instalado nativamente en el runner; lo usamos directo
-          echo "Obteniendo sistema base Debian..."
-          docker pull debian:stable-slim
-          CONTAINER_ID=$(docker create debian:stable-slim)
+          # Mapeo de arquitectura para Docker
+          DOCKER_ARCH="${{ matrix.arch }}"
+          if [ "${{ matrix.arch }}" = "i386" ]; then
+            DOCKER_ARCH="386"
+          fi
+
+          echo "Obteniendo sistema base Debian para $DOCKER_ARCH..."
+          docker pull --platform "linux/$DOCKER_ARCH" debian:stable-slim
+          CONTAINER_ID=$(docker create --platform "linux/$DOCKER_ARCH" debian:stable-slim)
           docker export "$CONTAINER_ID" -o /tmp/debian-rootfs.tar
           docker rm "$CONTAINER_ID"
           
           # Descomprimir la base de Debian en la raíz de la ISO
           sudo tar -xf /tmp/debian-rootfs.tar -C iso_root/
+
+          # Si la edición es Desktop, inyectamos el entorno gráfico estilo PIXEL
+          if [ "${{ matrix.edition }}" = "desktop" ]; then
+            echo "🎨 Inyectando entorno de escritorio PIXEL / LXDE..."
+            
+            # Copiar emulador QEMU estático para permitir chroot multi-arquitectura
+            sudo cp /usr/bin/qemu-*-static iso_root/usr/bin/ 2>/dev/null || true
+
+            sudo mount --bind /dev iso_root/dev
+            sudo mount --bind /proc iso_root/proc
+            sudo mount --bind /sys iso_root/sys
+
+            sudo chroot iso_root /bin/bash -c "
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update && \
+              apt-get install -y --no-install-recommends \
+                xserver-xorg \
+                xinit \
+                lxde-core \
+                lightdm \
+                desktop-base \
+                openbox \
+                lxterminal \
+                pixman-1-0 || true
+              apt-get clean
+              rm -rf /var/lib/apt/lists/*
+            " || true
+
+            sudo umount iso_root/dev || true
+            sudo umount iso_root/proc || true
+            sudo umount iso_root/sys || true
+          fi
           
           # Fusionar las carpetas del usuario (boot, etc) encima del sistema base
           if [ -d "chiquiOS" ]; then
             sudo cp -r chiquiOS/* iso_root/ || true
           fi
 
-          # Asegurar directorios críticos del sistema operativo vivo
+          # Asegurar directorios críticos
           sudo mkdir -p iso_root/boot/grub
           sudo mkdir -p iso_root/live
-          sudo mkdir -p iso_root/proc iso_root/sys iso_root/dev
 
       - name: 📀 Generate ISO Image (Universal Hybrid)
         run: |
