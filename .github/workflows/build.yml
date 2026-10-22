@@ -1,95 +1,53 @@
-name: 🍓 Build chiquiOS Universal (Matrix All-Arch)
+name: Build chiquiOS ISOs
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
-  build-chiquios:
-    name: ⚙️ Build ${{ matrix.edition }} (${{ matrix.name_suffix }})
+  build:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          - edition: cli
-            deb_arch: amd64
-            name_suffix: x64
-          - edition: cli
-            deb_arch: i386
-            name_suffix: x32
-          - edition: cli
-            deb_arch: arm64
-            name_suffix: arm64
-          - edition: desktop
-            deb_arch: amd64
-            name_suffix: x64
-          - edition: desktop
-            deb_arch: i386
-            name_suffix: x32
-          - edition: desktop
-            deb_arch: arm64
-            name_suffix: arm64
+        edition: [cli, desktop]
+        arch: [amd64]
 
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install Host Build Tools & Emulation
+      - name: ⚙️ Install Build Dependencies
         run: |
-          sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage xorriso grub-pc-bin grub-efi-amd64-bin grub-common mtools dosfstools qemu-user-static qemu-system-x86 ovmf binfmt-support curl git
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage grub-pc-bin grub-efi-amd64-bin mtools dosfstools curl
 
-      - name: 🐧 Bootstrap Debian Base (${{ matrix.deb_arch }})
+      - name: 🐧 Bootstrap Debian Rootfs
         run: |
-          sudo mkdir -p /tmp/chiquios-rootfs
-          sudo debootstrap --arch=${{ matrix.deb_arch }} --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
+          sudo debootstrap --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
 
-      - name: 🎨 Install Desktop UI (Solo versión Desktop)
-        if: matrix.edition == 'desktop'
+      - name: 📁 Inject chiquiOS Custom Tree, Bacusp & Proper GRUB
         run: |
-          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update
-            apt-get install -y --no-install-recommends \
-              xorg lxde-core pcmanfm lxpanel openbox lightdm netsurf-gtk sudo curl ca-certificates
-          "
-
-      - name: 🐢 Install Kernel & Core Packages (${{ matrix.name_suffix }})
-        run: |
-          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update
-            apt-get install -y linux-image-generic || apt-get install -y linux-image-amd64 || apt-get install -y linux-image-arm64 || true
-          "
-
-          sudo bash -c '
-            cd /tmp/chiquios-rootfs/boot
-            cp vmlinuz-* vmlinuz 2>/dev/null || true
-            cp initrd.img-* initrd.img 2>/dev/null || true
-          '
-
-          if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
-            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-efi-arm64-bin grub-efi-arm64"
-            sudo mkdir -p /tmp/chiquios-rootfs/EFI/BOOT
-            sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/monolithic/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || \
-            sudo cp /tmp/chiquios-rootfs/usr/lib/grub/arm64-efi/grubaa64.efi /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
-          elif [ "${{ matrix.deb_arch }}" = "amd64" ]; then
-            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub-efi-amd64-bin grub2-common"
-          else
-            sudo chroot /tmp/chiquios-rootfs /bin/bash -c "apt-get install -y grub-pc-bin grub2-common"
-          fi
-
-      - name: 📁 Inject chiquiOS Custom Tree & Bacusp
-        run: |
-          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp
+          sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp /tmp/chiquios-rootfs/boot/grub
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
 
+          # Inyectar archivos personalizados generales si existen en la carpeta chiquiOS/
           if [ -d "chiquiOS" ]; then
             sudo cp -r chiquiOS/* /tmp/chiquios-rootfs/ 2>/dev/null || true
+          fi
+
+          # ⚙️ INYECTAR EL GRUB CORRESPONDIENTE SEGÚN LA EDICIÓN
+          if [ "${{ matrix.edition }}" = "desktop" ]; then
+            if [ -f "configs/grub-desktop.cfg" ]; then
+              sudo cp configs/grub-desktop.cfg /tmp/chiquios-rootfs/boot/grub/grub.cfg
+            fi
+          else
+            if [ -f "configs/grub-cli.cfg" ]; then
+              sudo cp configs/grub-cli.cfg /tmp/chiquios-rootfs/boot/grub/grub.cfg
+            fi
           fi
 
           if [ -d "/tmp/chiquios-rootfs/usr/local/bin" ]; then
@@ -97,82 +55,38 @@ jobs:
           fi
 
           if [ ! -f "/tmp/chiquios-rootfs/etc/hostname" ]; then
-            echo "chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
+            echo "chiquiOS-${{ matrix.edition }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
           fi
 
-      - name: 🍃 Slim Down & Network On-Demand Tuning
+      - name: 📦 Compress Rootfs to SquashFS
         run: |
-          sudo chroot /tmp/chiquios-rootfs /bin/bash -c "
-            export DEBIAN_FRONTEND=noninteractive
-            
-            systemctl disable NetworkManager.service networking.service wpa_supplicant.service bluetooth.service cups.service avahi-daemon.service ModemManager.service || true
-            systemctl mask systemd-networkd-wait-online.service NetworkManager-wait-online.service || true
+          sudo mkdir -p iso_root/live
+          sudo mksquashfs /tmp/chiquios-rootfs iso_root/live/filesystem.squashfs -comp xz
 
-            apt-get clean
-            apt-get autoclean
-            rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-          "
-
-      - name: 💿 Build Bootable ISO (${{ matrix.name_suffix }})
+      - name: 💿 Copy Kernel and Initrd
         run: |
-          mkdir -p $GITHUB_WORKSPACE/dist
-          
-          if [ "${{ matrix.deb_arch }}" = "arm64" ]; then
-            EFI_IMG="/tmp/chiquios-rootfs/boot/grub/efiboot.img"
-            sudo dd if=/dev/zero of=$EFI_IMG bs=1M count=8 status=none
-            sudo mkfs.vfat $EFI_IMG >/dev/null
-            
-            sudo mkdir -p /tmp/efi_mount
-            sudo mount -o loop $EFI_IMG /tmp/efi_mount
-            sudo mkdir -p /tmp/efi_mount/EFI/BOOT
-            sudo cp /tmp/chiquios-rootfs/EFI/BOOT/BOOTAA64.EFI /tmp/efi_mount/EFI/BOOT/BOOTAA64.EFI 2>/dev/null || true
-            sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg /tmp/efi_mount/EFI/BOOT/grub.cfg 2>/dev/null || true
-            sudo umount /tmp/efi_mount
+          # Extraer kernel e initrd del rootfs montado para que el GRUB los encuentre en la ISO
+          sudo cp /tmp/chiquios-rootfs/boot/vmlinuz-* iso_root/vmlinuz
+          sudo cp /tmp/chiquios-rootfs/boot/initrd.img-* iso_root/initrd.img
+          # Asegurar que existan en la ruta que busca el grub.cfg (/boot/)
+          sudo mkdir -p iso_root/boot
+          sudo cp iso_root/vmlinuz iso_root/boot/vmlinuz
+          sudo cp iso_root/initrd.img iso_root/boot/initrd.img
 
-            sudo xorriso -as mkisofs -iso-level 3 \
-              -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
-              -full-iso9660-filenames -volid "CHIQUIOS" \
-              -eltorito-alt-boot \
-              -e boot/grub/efiboot.img -no-emul-boot \
-              -isohybrid-gpt-basdat \
-              /tmp/chiquios-rootfs/
-          else
-            sudo grub-mkrescue -o $GITHUB_WORKSPACE/dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso /tmp/chiquios-rootfs/
+      - name: 📀 Generate ISO Image
+        run: |
+          # Mover el grub.cfg a la estructura de arranque de la ISO
+          sudo mkdir -p iso_root/boot/grub
+          if [ -f "/tmp/chiquios-rootfs/boot/grub/grub.cfg" ]; then
+            sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg iso_root/boot/grub/grub.cfg
           fi
 
-      - name: 🖥️ Automated Boot Test (Solo x86 - 5 Minutos)
-        if: matrix.deb_arch != 'arm64'
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/test-logs
-          
-          QEMU_CMD="qemu-system-x86_64"
-          EXTRA_ARGS=""
-          
-          if [ "${{ matrix.deb_arch }}" = "i386" ]; then
-            QEMU_CMD="qemu-system-i386"
-          else
-            if [ -f /usr/share/ovmf/OVMF.fd ]; then
-              EXTRA_ARGS="-bios /usr/share/ovmf/OVMF.fd"
-            fi
-          fi
-          
-          $QEMU_CMD $EXTRA_ARGS \
-            -m 512M \
-            -cdrom dist/chiquiOS-${{ matrix.edition }}-${{ matrix.name_suffix }}.iso \
-            -boot d \
-            -nographic \
-            -no-reboot \
-            > $GITHUB_WORKSPACE/test-logs/boot-output.txt 2>&1 &
-          
-          QEMU_PID=$!
-          sleep 300
-          kill $QEMU_PID || true
-          
-          echo "=== LOG DE LA PANTALLA VIRTUAL (BOOT TEST X86 - 5 MINS) ==="
-          cat $GITHUB_WORKSPACE/test-logs/boot-output.txt
+          # Crear la ISO final con la etiqueta CHIQUIOS para que el kernel la reconozca
+          sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -b boot/grub/i386-pc/eltorito.img -c boot/grub/boot.catalog -no-emul-boot -boot-load-size 4 -boot-info-table -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ || \
+          sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
 
-      - name: 📦 Upload ISO Artifact
+      - name: 🚀 Upload ISO Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: isos-${{ matrix.edition }}-${{ matrix.name_suffix }}
-          path: dist/*.iso
+          name: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}-iso
+          path: chiquiOS-*.iso
