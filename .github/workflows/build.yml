@@ -1,4 +1,4 @@
-name: Build ChiquiOS (Clean Config)
+name: Build ChiquiOS
 
 on:
   push:
@@ -29,12 +29,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin debian-archive-keyring
 
-      - name: Prepare Edition Package Lists and Bootstrap Config
+      - name: Prepare Package Lists for CLI
         run: |
-          mkdir -p config/package-lists config/binary
-          
           if [ "${{ matrix.edition }}" = "cli" ]; then
-            echo "Escribiendo paquetes para CLI..."
+            mkdir -p config/package-lists
             printf "systemd-sysv\nlinux-image-generic\nlive-boot\nlive-config\nnano\ncurl\nwget\ngit\npython3\nnetcat-openbsd\nnmap\n" > config/package-lists/chiquios.list.chroot
           fi
 
