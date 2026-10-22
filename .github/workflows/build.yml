@@ -28,13 +28,14 @@ jobs:
             grub-pc-bin \
             mtools \
             squashfs-tools \
-            grub-common
+            grub-common \
+            docker.io
 
       - name: 📦 Generate Base Debian Rootfs & Merge User Files
         run: |
           sudo mkdir -p iso_root
           
-          # Extraer el sistema base oficial de Debian usando Docker (rápido y sin errores)
+          # Extraer el sistema base oficial de Debian usando Docker de forma ultrarrápida
           echo "Obteniendo sistema base Debian..."
           docker pull debian:stable-slim
           CONTAINER_ID=$(docker create debian:stable-slim)
