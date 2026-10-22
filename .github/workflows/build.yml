@@ -80,18 +80,18 @@ jobs:
           # Eliminar completamente la carpeta de credenciales
           sudo rm -rf rootfs/etc/credstore.encrypted || true
 
-          mkdir -p iso_root/isolinux iso_root/boot
+          mkdir -p iso_root/isolinux
           sudo cp -a rootfs/* iso_root/
           
-          # Copiar físicamente el kernel y el initrd reales (evitando symlinks)
-          sudo cp -L rootfs/boot/vmlinuz-* iso_root/boot/vmlinuz || true
-          sudo cp -L rootfs/boot/initrd.img-* iso_root/boot/initrd.img || true
+          # Copiar físicamente el kernel y el initrd directo en isolinux/ para evitar errores de ruta
+          sudo cp -L rootfs/boot/vmlinuz-* iso_root/isolinux/vmlinuz || true
+          sudo cp -L rootfs/boot/initrd.img-* iso_root/isolinux/initrd.img || true
 
           # Copiar binarios de ISOLINUX
           cp /usr/lib/ISOLINUX/isolinux.bin iso_root/isolinux/
           cp /usr/lib/syslinux/modules/bios/ldlinux.c32 iso_root/isolinux/ || true
 
-          # Crear archivo de configuración de ISOLINUX
+          # Crear archivo de configuración de ISOLINUX con rutas locales
           cat << 'EOF' > iso_root/isolinux/isolinux.cfg
           DEFAULT chiquios
           TIMEOUT 50
@@ -99,8 +99,8 @@ jobs:
 
           LABEL chiquios
               MENU LABEL ChiquiOS
-              KERNEL /boot/vmlinuz
-              INITRD /boot/initrd.img
+              KERNEL vmlinuz
+              INITRD initrd.img
               APPEND root=/dev/sda1 ro quiet
           EOF
 
