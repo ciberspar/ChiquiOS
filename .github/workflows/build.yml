@@ -41,7 +41,7 @@ jobs:
             KERNEL_PKG="linux-image-686"
           fi
 
-          # Instalar el kernel, live-boot y grub-efi-arm64 dentro del rootfs chroot
+          # Instalar el kernel, live-boot y dependencias EFI si aplica
           sudo chroot /tmp/chiquios-rootfs apt-get update
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot grub-efi-arm64
@@ -49,7 +49,7 @@ jobs:
             sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot
           fi
 
-      - name: 📁 Inject chiquiOS Custom Tree, Bacusp & Proper GRUB
+      - name: 📁 Inject chiquiOS Custom Tree & Bacusp
         run: |
           sudo mkdir -p /tmp/chiquios-rootfs/usr/local/bin /tmp/chiquios-rootfs/etc/bacusp /tmp/chiquios-rootfs/boot/grub
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
@@ -58,17 +58,6 @@ jobs:
           # Inyectar archivos personalizados generales si existen en la carpeta chiquiOS/
           if [ -d "chiquiOS" ]; then
             sudo cp -r chiquiOS/* /tmp/chiquios-rootfs/ 2>/dev/null || true
-          fi
-
-          # Inyectar el GRUB correspondiente según la edición (CLI o Desktop)
-          if [ "${{ matrix.edition }}" = "desktop" ]; then
-            if [ -f "configs/grub-desktop.cfg" ]; then
-              sudo cp configs/grub-desktop.cfg /tmp/chiquios-rootfs/boot/grub/grub.cfg
-            fi
-          else
-            if [ -f "configs/grub-cli.cfg" ]; then
-              sudo cp configs/grub-cli.cfg /tmp/chiquios-rootfs/boot/grub/grub.cfg
-            fi
           fi
 
           if [ -d "/tmp/chiquios-rootfs/usr/local/bin" ]; then
@@ -104,21 +93,27 @@ jobs:
 
       - name: 📀 Generate ISO Image
         run: |
+          # 1. Crear directorio de GRUB en la raíz de la ISO
           sudo mkdir -p iso_root/boot/grub
 
-          # Copiar la configuración de GRUB según la edición
-          if [ -f "/tmp/chiquios-rootfs/boot/grub/grub.cfg" ]; then
-            sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg iso_root/boot/grub/grub.cfg
+          # 2. Copiar la configuración según la edición directamente a iso_root
+          if [ "${{ matrix.edition }}" = "desktop" ]; then
+            if [ -f "configs/grub-desktop.cfg" ]; then
+              sudo cp configs/grub-desktop.cfg iso_root/boot/grub/grub.cfg
+            fi
+          else
+            if [ -f "configs/grub-cli.cfg" ]; then
+              sudo cp configs/grub-cli.cfg iso_root/boot/grub/grub.cfg
+            fi
           fi
 
+          # 3. Generar la ISO
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # Usar la herramienta oficial de GRUB para generar la ISO limpia sin truncamiento de nombres
+            # grub-mkrescue embebe el iso_root/boot/grub/grub.cfg para armar el menú directo
             sudo grub-mkrescue -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ -- -volid "CHIQUIOS"
           else
             # Para ARM64 (Pure UEFI)
             sudo mkdir -p iso_root/EFI/BOOT
-            
-            # Generar ejecutable EFI usando el chroot
             sudo chroot /tmp/chiquios-rootfs grub-mkimage -O arm64-efi -o /tmp/BOOTAA64.EFI -p /boot/grub iso9660 normal test reboot halt serial
             sudo cp /tmp/chiquios-rootfs/tmp/BOOTAA64.EFI iso_root/EFI/BOOT/BOOTAA64.EFI
             
