@@ -22,11 +22,25 @@ jobs:
       - name: ⚙️ Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage grub-pc-bin grub-efi-amd64-bin mtools dosfstools curl
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage grub-pc-bin grub-efi-amd64-bin mtools dosfstools curl qemu-user-static
 
-      - name: 🐧 Bootstrap Debian Rootfs
+      - name: 🐧 Bootstrap Debian Rootfs & Install Kernel
         run: |
-          sudo debootstrap --variant=minbase bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
+          # Bootstrap específico para la arquitectura actual de la matriz
+          sudo debootstrap --variant=minbase --arch=${{ matrix.arch }} bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
+
+          # Seleccionar el paquete de kernel adecuado según la arquitectura
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            KERNEL_PKG="linux-image-amd64"
+          elif [ "${{ matrix.arch }}" = "arm64" ]; then
+            KERNEL_PKG="linux-image-arm64"
+          elif [ "${{ matrix.arch }}" = "i386" ]; then
+            KERNEL_PKG="linux-image-686"
+          fi
+
+          # Instalar el kernel y live-boot dentro del rootfs
+          sudo chroot /tmp/chiquios-rootfs apt-get update
+          sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot
 
       - name: 📁 Inject chiquiOS Custom Tree, Bacusp & Proper GRUB
         run: |
@@ -34,11 +48,12 @@ jobs:
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
 
+          # Inyectar archivos personalizados generales si existen en la carpeta chiquiOS/
           if [ -d "chiquiOS" ]; then
             sudo cp -r chiquiOS/* /tmp/chiquios-rootfs/ 2>/dev/null || true
           fi
 
-          # Inyectar el GRUB correcto según la edición
+          # ⚙️ INYECTAR EL GRUB CORRESPONDIENTE SEGÚN LA EDICIÓN (CLI o Desktop)
           if [ "${{ matrix.edition }}" = "desktop" ]; then
             if [ -f "configs/grub-desktop.cfg" ]; then
               sudo cp configs/grub-desktop.cfg /tmp/chiquios-rootfs/boot/grub/grub.cfg
@@ -62,13 +77,23 @@ jobs:
           sudo mkdir -p iso_root/live
           sudo mksquashfs /tmp/chiquios-rootfs iso_root/live/filesystem.squashfs -comp xz
 
-      - name: 💿 Copy Kernel and Initrd
+      - name: 💿 Copy Kernel and Initrd Safely
         run: |
-          sudo cp /tmp/chiquios-rootfs/boot/vmlinuz-* iso_root/vmlinuz
-          sudo cp /tmp/chiquios-rootfs/boot/initrd.img-* iso_root/initrd.img
           sudo mkdir -p iso_root/boot
-          sudo cp iso_root/vmlinuz iso_root/boot/vmlinuz
-          sudo cp iso_root/initrd.img iso_root/boot/initrd.img
+          
+          # Buscar de forma segura los archivos generados del kernel
+          VMLINUZ_FILE=$(ls /tmp/chiquios-rootfs/boot/vmlinuz-* 2>/dev/null | head -n 1)
+          INITRD_FILE=$(ls /tmp/chiquios-rootfs/boot/initrd.img-* 2>/dev/null | head -n 1)
+
+          if [ -f "$VMLINUZ_FILE" ] && [ -f "$INITRD_FILE" ]; then
+            sudo cp "$VMLINUZ_FILE" iso_root/vmlinuz
+            sudo cp "$INITRD_FILE" iso_root/initrd.img
+            sudo cp iso_root/vmlinuz iso_root/boot/vmlinuz
+            sudo cp iso_root/initrd.img iso_root/boot/initrd.img
+          else
+            echo "❌ Error crítico: No se encontró vmlinuz o initrd.img en /tmp/chiquios-rootfs/boot/"
+            exit 1
+          fi
 
       - name: 📀 Generate ISO Image
         run: |
