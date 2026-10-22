@@ -1,4 +1,4 @@
-name: Build ChiquiOS (Live-Build Pro)
+name: Build ChiquiOS (Universal PC & Emulator)
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools
+          sudo apt-get install -y live-build debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin
 
       - name: Prepare Edition Package Lists
         run: |
@@ -41,23 +41,33 @@ jobs:
         run: |
           TARGET_ARCH="${{ matrix.arch }}"
           HOST_ARCH=$(dpkg --print-architecture)
-          BOOTSTRAP_ENGINE="debootstrap"
+          
+          EXTRA_FLAGS=""
           if [ "$TARGET_ARCH" != "$HOST_ARCH" ]; then
-            BOOTSTRAP_ENGINE="qemu-debootstrap"
+            QEMU_ARCH="$TARGET_ARCH"
+            if [ "$TARGET_ARCH" = "ppc64el" ]; then QEMU_ARCH="ppc64le"; fi
+            EXTRA_FLAGS="--debootstrap-options --executable=qemu-${QEMU_ARCH}-static"
           fi
+
+          # Configurar bootloader según la arquitectura (ppc64el usa grub, amd64/i386 usan isolinux)
+          BOOTLOADER="isolinux"
+          if [ "$TARGET_ARCH" = "ppc64el" ] || [ "$TARGET_ARCH" = "arm64" ]; then
+            BOOTLOADER="grub-efi"
+          fi
+
           BOOT_PARAMS="boot=live"
           if [ "${{ matrix.edition }}" = "desktop" ]; then
             BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
           fi
+
           lb config \
             --architectures "$TARGET_ARCH" \
-            --machine "$TARGET_ARCH" \
-            --bootstrap "$BOOTSTRAP_ENGINE" \
             --distribution stable \
             --binary-images iso-hybrid \
             --apt-recommends false \
-            --bootloader isolinux \
-            --bootappend-live "$BOOT_PARAMS"
+            --bootloader "$BOOTLOADER" \
+            --bootappend-live "$BOOT_PARAMS" \
+            $EXTRA_FLAGS
 
       - name: Build ISO
         run: |
