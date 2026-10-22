@@ -1,16 +1,46 @@
-# Núcleo del sistema y gestor de arranque limpio
+# --- Núcleo y Sistema ---
 systemd-sysv
 linux-image-generic
 live-boot
 live-config
 
-# Interfaz gráfica ligera (LXDE o XFCE según prefieras)
+# --- Entorno PIXEL (Raspberry Pi) ---
+raspberrypi-ui-mods
+rpi-desktop
 lightdm
-lxde-core
-nano
-curl
 
-# Herramientas de Raspberry Pi (para soporte de hardware ARM / Pi)
+# --- Programación y Código Liviano ---
+geany
+geany-plugins
+micro
+git
+python3
+build-essential
+
+# --- Ofimática Ultra Liviana ---
+abiword
+gnumeric
+zathura
+
+# --- Navegación Web ---
+midori
+firefox-esr
+
+# --- Ciberseguridad Liviana ---
+nmap
+netcat-openbsd
+socat
+tcpdump
+tshark
+nikto
+john
+macchanger
+curl
+wget
+dnsutils
+
+# --- Herramientas Raspberry Pi ---
 raspi-config
+rpi-eeprom
 firmware-brcm80211
 firmware-linux-free
