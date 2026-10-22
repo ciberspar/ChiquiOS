@@ -22,7 +22,7 @@ jobs:
       - name: ⚙️ Install Build Dependencies & QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage grub-pc-bin grub-efi-amd64-bin mtools dosfstools curl qemu-user-static binfmt-support
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage grub-pc-bin grub-efi-amd64-bin mtools dosfstools curl qemu-user-static binfmt-support xorriso grub-common
 
       - name: 🐧 Bootstrap Debian Rootfs & Install Kernel
         run: |
@@ -41,9 +41,13 @@ jobs:
             KERNEL_PKG="linux-image-686"
           fi
 
-          # Instalar el kernel y live-boot dentro del rootfs chroot
+          # Instalar el kernel, live-boot y grub-efi-arm64 dentro del rootfs chroot
           sudo chroot /tmp/chiquios-rootfs apt-get update
-          sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot grub-efi-arm64
+          else
+            sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot
+          fi
 
       - name: 📁 Inject chiquiOS Custom Tree, Bacusp & Proper GRUB
         run: |
@@ -107,27 +111,17 @@ jobs:
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg iso_root/boot/grub/grub.cfg
           fi
 
-          # Para x86 (i386 o amd64), generar el core El Torito robusto
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            sudo mkdir -p iso_root/boot/grub/i386-pc
-            
-            # Generar core de GRUB con los módulos estándar de BIOS
-            sudo grub-mkimage -O i386-pc -o iso_root/boot/grub/i386-pc/eltorito.img -p /boot/grub \
-              iso9660 biosdisk normal test reboot halt vga vbe video_bochs video_cirrus video serial
-            
-            # Copiar todos los módulos de GRUB
-            if [ -d "/usr/lib/grub/i386-pc" ]; then
-              sudo cp -r /usr/lib/grub/i386-pc/* iso_root/boot/grub/i386-pc/ 2>/dev/null || true
-            fi
-
-            # Armar la ISO evitando la mutilación de nombres a 8.3 (-L -N -relaxed-filenames)
-            sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames -volid "CHIQUIOS" \
-              -b boot/grub/i386-pc/eltorito.img \
-              -c boot/grub/boot.catalog \
-              -no-emul-boot -boot-load-size 4 -boot-info-table \
-              -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
+            # Usar la herramienta oficial de GRUB para generar la ISO limpia sin truncamiento de nombres
+            sudo grub-mkrescue -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ -- -volid "CHIQUIOS"
           else
             # Para ARM64 (Pure UEFI)
+            sudo mkdir -p iso_root/EFI/BOOT
+            
+            # Generar ejecutable EFI usando el chroot
+            sudo chroot /tmp/chiquios-rootfs grub-mkimage -O arm64-efi -o /tmp/BOOTAA64.EFI -p /boot/grub iso9660 normal test reboot halt serial
+            sudo cp /tmp/chiquios-rootfs/tmp/BOOTAA64.EFI iso_root/EFI/BOOT/BOOTAA64.EFI
+            
             sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames -volid "CHIQUIOS" \
               -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
           fi
