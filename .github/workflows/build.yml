@@ -22,7 +22,7 @@ jobs:
       - name: Set up QEMU and Binfmt
         uses: docker/setup-qemu-action@v3
         with:
-      platforms: all
+          platforms: all
 
       - name: Install Build Tools & Keyrings
         run: |
@@ -53,7 +53,6 @@ jobs:
             BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
           fi
 
-          # Ejecutar lb config limpio sin opciones inválidas
           lb config \
             --mode debian \
             --architectures "$TARGET_ARCH" \
