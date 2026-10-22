@@ -50,18 +50,20 @@ jobs:
 
       - name: ⚙️ Configure Bootloaders
         run: |
-          # 1. Si es x86 (i386 / amd64), configuramos Syslinux de forma robusta
+          # 1. Si es x86 (i386 / amd64), buscamos y copiamos isolinux.bin dinámicamente
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # Buscar y copiar isolinux.bin garantizando que quede en la ruta exacta que pide genisoimage
-            if [ -f "/usr/lib/ISOLINUX/isolinux.bin" ]; then
-              sudo cp /usr/lib/ISOLINUX/isolinux.bin iso_root/boot/syslinux/
-              sudo cp /usr/lib/ISOLINUX/ldlinux.c32 iso_root/boot/syslinux/ || true
-            elif [ -f "/usr/lib/syslinux/isolinux.bin" ]; then
-              sudo cp /usr/lib/syslinux/isolinux.bin iso_root/boot/syslinux/
-              sudo cp /usr/lib/syslinux/ldlinux.c32 iso_root/boot/syslinux/ || true
-            elif [ -f "/usr/share/syslinux/isolinux.bin" ]; then
-              sudo cp /usr/share/syslinux/isolinux.bin iso_root/boot/syslinux/
-              sudo cp /usr/share/syslinux/ldlinux.c32 iso_root/boot/syslinux/ || true
+            echo "Buscando isolinux.bin en el sistema..."
+            ISOLINUX_PATH=$(find /usr -name isolinux.bin 2>/dev/null | head -n 1)
+            
+            if [ -n "$ISOLINUX_PATH" ]; then
+              echo "Encontrado en: $ISOLINUX_PATH"
+              sudo cp "$ISOLINUX_PATH" iso_root/boot/syslinux/
+              # Copiar complementos necesarios (.c32) desde la misma ruta de origen
+              SRC_DIR=$(dirname "$ISOLINUX_PATH")
+              sudo cp "$SRC_DIR"/*.c32 iso_root/boot/syslinux/ || true
+            else
+              echo "¡Error! No se pudo localizar isolinux.bin en el sistema."
+              exit 1
             fi
 
             # Crear el archivo de configuración de Syslinux
@@ -95,7 +97,7 @@ jobs:
       - name: 📀 Generate ISO Image
         run: |
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # Generar ISO x86 con Syslinux buscando explícitamente el binario
+            # Generar ISO x86 con Syslinux usando búsqueda dinámica
             sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames \
               -volid "CHIQUIOS" \
               -c boot/syslinux/boot.cat \
