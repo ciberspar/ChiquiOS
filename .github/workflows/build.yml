@@ -58,12 +58,21 @@ jobs:
             sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd sysvinit-core nano curl || true"
           fi
 
+          # Integración de bacus-pkg dentro del entorno chroot
+          # (Ajusta los comandos según los que uses para invocar tu gestor de paquetes)
+          if [ -f "rootfs/usr/bin/bacus" ] || [ -d "rootfs/etc/bacus" ]; then
+            sudo chroot rootfs bash -c "bacus pkg update || true"
+          fi
+
           sudo chroot rootfs bash -c "apt-get clean"
           sudo umount rootfs/dev rootfs/proc rootfs/sys || true
 
       - name: Build Real-PC Bootable ISO (i386 / amd64)
         if: matrix.arch == 'i386' || matrix.arch == 'amd64'
         run: |
+          # Limpiar archivo protegido de credenciales que rompe xorriso
+          sudo rm -f rootfs/etc/credstore.encrypted || true
+
           mkdir -p iso_root/boot/grub
           sudo cp -a rootfs/* iso_root/
           
