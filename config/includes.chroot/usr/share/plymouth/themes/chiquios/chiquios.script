@@ -1,0 +1,25 @@
+# --- ChiquiOS Plymouth Script ---
+
+# 1. Imagen de Fondo (background.png)
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+background_image = Image("background.png");
+background_sprite = Sprite(background_image);
+
+# Escalar la imagen de fondo para que cubra toda la pantalla
+scale_x = screen_width / background_image.GetWidth();
+scale_y = screen_height / background_image.GetHeight();
+background_sprite.SetScale(scale_x, scale_y);
+background_sprite.SetZ(-10);
+
+# 2. Configuración del cuadro de texto / vista previa de logs (abajo a la mitad)
+# Creamamos una caja simulada para los mensajes tipo terminal pequeña
+text_box_x = screen_width / 2 - 250;
+text_box_y = screen_height - 220;
+
+# Función para manejar mensajes de estado en pantalla
+fun message_callback (text) {
+    # Aquí Plymouth maneja los textos de systemd automáticamente
+}
+Plymouth.SetMessageFunction(message_callback);
