@@ -1,4 +1,4 @@
-name: Build ChiquiOS (Universal PC & Emulator)
+name: Build ChiquiOS (Robust Mirrors)
 
 on:
   push:
@@ -24,10 +24,10 @@ jobs:
         with:
           platforms: all
 
-      - name: Install Build Tools
+      - name: Install Build Tools & Keyrings
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin
+          sudo apt-get install -y live-build debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin debian-archive-keyring
 
       - name: Prepare Edition Package Lists
         run: |
@@ -43,13 +43,15 @@ jobs:
           HOST_ARCH=$(dpkg --print-architecture)
           
           EXTRA_FLAGS=""
+          # Usar el mirror de respaldo oficial que nunca falla en CI
+          MIRROR_URL="http://ftp.debian.org/debian/"
+
           if [ "$TARGET_ARCH" != "$HOST_ARCH" ]; then
             QEMU_ARCH="$TARGET_ARCH"
             if [ "$TARGET_ARCH" = "ppc64el" ]; then QEMU_ARCH="ppc64le"; fi
             EXTRA_FLAGS="--debootstrap-options --executable=qemu-${QEMU_ARCH}-static"
           fi
 
-          # Configurar bootloader según la arquitectura (ppc64el usa grub, amd64/i386 usan isolinux)
           BOOTLOADER="isolinux"
           if [ "$TARGET_ARCH" = "ppc64el" ] || [ "$TARGET_ARCH" = "arm64" ]; then
             BOOTLOADER="grub-efi"
@@ -61,8 +63,15 @@ jobs:
           fi
 
           lb config \
+            --mode debian \
             --architectures "$TARGET_ARCH" \
             --distribution stable \
+            --parent-mirror-bootstrap "$MIRROR_URL" \
+            --parent-mirror-chroot "$MIRROR_URL" \
+            --parent-mirror-binary "$MIRROR_URL" \
+            --mirror-bootstrap "$MIRROR_URL" \
+            --mirror-chroot "$MIRROR_URL" \
+            --mirror-binary "$MIRROR_URL" \
             --binary-images iso-hybrid \
             --apt-recommends false \
             --bootloader "$BOOTLOADER" \
