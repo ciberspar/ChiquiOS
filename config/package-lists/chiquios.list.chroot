@@ -1,0 +1,16 @@
+# Núcleo del sistema y gestor de arranque limpio
+systemd-sysv
+linux-image-generic
+live-boot
+live-config
+
+# Interfaz gráfica ligera (LXDE o XFCE según prefieras)
+lightdm
+lxde-core
+nano
+curl
+
+# Herramientas de Raspberry Pi (para soporte de hardware ARM / Pi)
+raspi-config
+firmware-brcm80211
+firmware-linux-free
