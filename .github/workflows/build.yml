@@ -26,10 +26,8 @@ jobs:
 
       - name: 🐧 Bootstrap Debian Rootfs & Install Kernel
         run: |
-          # Bootstrap específico para la arquitectura actual de la matriz
           sudo debootstrap --variant=minbase --arch=${{ matrix.arch }} bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
 
-          # Seleccionar el paquete de kernel adecuado según la arquitectura
           if [ "${{ matrix.arch }}" = "amd64" ]; then
             KERNEL_PKG="linux-image-amd64"
           elif [ "${{ matrix.arch }}" = "arm64" ]; then
@@ -38,7 +36,6 @@ jobs:
             KERNEL_PKG="linux-image-686"
           fi
 
-          # Instalar el kernel y live-boot dentro del rootfs
           sudo chroot /tmp/chiquios-rootfs apt-get update
           sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot
 
@@ -48,12 +45,10 @@ jobs:
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
 
-          # Inyectar archivos personalizados generales si existen en la carpeta chiquiOS/
           if [ -d "chiquiOS" ]; then
             sudo cp -r chiquiOS/* /tmp/chiquios-rootfs/ 2>/dev/null || true
           fi
 
-          # ⚙️ INYECTAR EL GRUB CORRESPONDIENTE SEGÚN LA EDICIÓN (CLI o Desktop)
           if [ "${{ matrix.edition }}" = "desktop" ]; then
             if [ -f "configs/grub-desktop.cfg" ]; then
               sudo cp configs/grub-desktop.cfg /tmp/chiquios-rootfs/boot/grub/grub.cfg
@@ -81,7 +76,6 @@ jobs:
         run: |
           sudo mkdir -p iso_root/boot
           
-          # Buscar de forma segura los archivos generados del kernel
           VMLINUZ_FILE=$(ls /tmp/chiquios-rootfs/boot/vmlinuz-* 2>/dev/null | head -n 1)
           INITRD_FILE=$(ls /tmp/chiquios-rootfs/boot/initrd.img-* 2>/dev/null | head -n 1)
 
@@ -102,8 +96,17 @@ jobs:
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg iso_root/boot/grub/grub.cfg
           fi
 
-          sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -b boot/grub/i386-pc/eltorito.img -c boot/grub/boot.catalog -no-emul-boot -boot-load-size 4 -boot-info-table -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ || \
-          sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
+          # Generación adaptada para que SeaBIOS lea el sector de arranque de la ISO
+          if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
+            sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" \
+              -b boot/grub/i386-pc/eltorito.img \
+              -c boot/grub/boot.catalog \
+              -no-emul-boot -boot-load-size 4 -boot-info-table \
+              -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ || \
+            sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
+          else
+            sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
+          fi
 
       - name: 🚀 Upload ISO Artifact
         uses: actions/upload-artifact@v4
