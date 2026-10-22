@@ -19,16 +19,26 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install build tools
+      - name: 🛠️ Install dependencies dynamically per architecture
         run: |
           sudo apt-get update
+          
+          # Herramientas base universales
           sudo apt-get install -y --no-install-recommends \
             xorriso \
-            grub-pc-bin \
-            grub-efi-amd64-bin \
-            grub-efi-arm64-bin \
             mtools \
-            squashfs-tools
+            squashfs-tools \
+            genisoimage
+
+          # Instalar dependencias de GRUB según la arquitectura del job
+          if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
+            sudo apt-get install -y --no-install-recommends grub-pc-bin grub-efi-amd64-bin || true
+          elif [ "${{ matrix.arch }}" = "arm64" ]; then
+            # Para arm64 habilitamos la arquitectura cruzada y el paquete EFI correspondiente
+            sudo dpkg --add-architecture arm64 || true
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends grub-efi-arm64-bin || true
+          fi
 
       - name: 📂 Prepare ISO Root Structure
         run: |
@@ -62,7 +72,7 @@ jobs:
           fi
 
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # x86: Generar imagen híbrida con grub-mkrescue (sin buscar binarios externos)
+            # x86: Generar imagen híbrida con grub-mkrescue
             sudo grub-mkrescue -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ -- -volid "CHIQUIOS"
           else
             # arm64: UEFI puro para emuladores
