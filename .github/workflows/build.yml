@@ -1,4 +1,4 @@
-name: Build ChiquiOS (Live-Build)
+name: Build ChiquiOS (Live-Build Final)
 
 on:
   push:
@@ -23,21 +23,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap xorriso mtools dosfstools qemu-user-static binfmt-support
 
-      - name: Configure Live-Build
+      - name: Configure Live-Build with Plymouth & Quiet Boot
         run: |
           lb config \
             --architectures ${{ matrix.arch }} \
             --distribution stable \
             --binary-images iso-hybrid \
             --apt-recommends false \
-            --bootloader isolinux
+            --bootloader isolinux \
+            --bootappend-live "boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
 
       - name: Build ISO
         run: |
           sudo lb build
 
+      - name: Rename and Prepare ISO Artifact
+        run: |
+          mv live-image-*.hybrid.iso chiquiOS-${{ matrix.arch }}.iso || mv live-image-*.iso chiquiOS-${{ matrix.arch }}.iso
+
       - name: Upload ISO Artifact
         uses: actions/upload-artifact@v4
         with:
           name: chiquiOS-${{ matrix.arch }}
-          path: live-image-${{ matrix.arch }}.hybrid.iso
+          path: "*.iso"
