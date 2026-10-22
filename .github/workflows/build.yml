@@ -19,13 +19,16 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Install Build Dependencies
+      - name: ⚙️ Install Build Dependencies & QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap squashfs-tools genisoimage grub-pc-bin grub-efi-amd64-bin grub-efi-arm64-bin mtools dosfstools curl qemu-user-static
+          sudo apt-get install -y debootstrap squashfs-tools genisoimage grub-pc-bin grub-efi-amd64-bin mtools dosfstools curl qemu-user-static binfmt-support
 
       - name: 🐧 Bootstrap Debian Rootfs & Install Kernel
         run: |
+          # Registrar ejecutables de QEMU para soporte multi-arquitectura limpio
+          sudo update-binfmts --enable
+
           # Bootstrap específico para la arquitectura actual de la matriz
           sudo debootstrap --variant=minbase --arch=${{ matrix.arch }} bookworm /tmp/chiquios-rootfs http://deb.debian.org/debian/
 
@@ -38,7 +41,7 @@ jobs:
             KERNEL_PKG="linux-image-686"
           fi
 
-          # Instalar el kernel y live-boot dentro del rootfs
+          # Instalar el kernel y live-boot dentro del rootfs chroot
           sudo chroot /tmp/chiquios-rootfs apt-get update
           sudo chroot /tmp/chiquios-rootfs apt-get install -y --no-install-recommends $KERNEL_PKG live-boot
 
@@ -125,12 +128,6 @@ jobs:
               -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
           else
             # Para ARM64 (Pure UEFI)
-            sudo mkdir -p iso_root/EFI/BOOT
-            
-            # Generar el binario EFI obligatorio para bootear en ARM64
-            sudo grub-mkimage -O arm64-efi -o iso_root/EFI/BOOT/BOOTAA64.EFI -p /boot/grub \
-              iso9660 normal test reboot halt serial
-            
             sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames -volid "CHIQUIOS" \
               -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
           fi
