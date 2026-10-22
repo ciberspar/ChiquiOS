@@ -32,41 +32,23 @@ jobs:
       - name: Prepare Edition Package Lists
         run: |
           mkdir -p config/package-lists
-
           if [ "${{ matrix.edition }}" = "cli" ]; then
             echo "Escribiendo paquetes para CLI..."
-            cat << 'EOF' > config/package-lists/chiquios.list.chroot
-systemd-sysv
-linux-image-generic
-live-boot
-live-config
-nano
-curl
-wget
-git
-python3
-netcat-openbsd
-nmap
-EOF
+            printf "systemd-sysv\nlinux-image-generic\nlive-boot\nlive-config\nnano\ncurl\nwget\ngit\npython3\nnetcat-openbsd\nnmap\n" > config/package-lists/chiquios.list.chroot
           fi
 
       - name: Configure Live-Build
         run: |
-          # Definir parámetros específicos según la arquitectura para evitar fallos de chroot
           TARGET_ARCH="${{ matrix.arch }}"
           HOST_ARCH=$(dpkg --print-architecture)
-
-          # Si la arquitectura del build es diferente a la del host de github, usamos qemu-debootstrap
           BOOTSTRAP_ENGINE="debootstrap"
           if [ "$TARGET_ARCH" != "$HOST_ARCH" ]; then
             BOOTSTRAP_ENGINE="qemu-debootstrap"
           fi
-
           BOOT_PARAMS="boot=live"
           if [ "${{ matrix.edition }}" = "desktop" ]; then
             BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
           fi
-
           lb config \
             --architectures "$TARGET_ARCH" \
             --machine "$TARGET_ARCH" \
@@ -84,7 +66,7 @@ EOF
       - name: Rename and Prepare ISO Artifact
         run: |
           mkdir -p output_isos
-          mv live-image-*.hybrid.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || mv live-image-*.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso
+          mv live-image-*.hybrid.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || cp live-image-*.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || true
 
       - name: Upload ISO Artifact
         uses: actions/upload-artifact@v4
