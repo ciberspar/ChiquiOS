@@ -19,18 +19,18 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install dependencies
+      - name: 🛠️ Install dependencies cleanly
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          # Instalación directa y sin dependencias fantasma que rompan el apt
+          sudo apt-get install -y --no-install-recommends \
+            xorriso \
             genisoimage \
             grub-pc-bin \
             grub-efi-amd64-bin \
             grub-efi-arm64-bin \
             mtools \
-            xorriso \
-            squashfs-tools \
-            debootstrap
+            squashfs-tools
 
       - name: 📂 Prepare ISO Root Structure
         run: |
