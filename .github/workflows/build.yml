@@ -1,4 +1,4 @@
-name: Build ChiquiOS (Live-Build Final)
+name: Build ChiquiOS (Live-Build)
 
 on:
   push:
@@ -7,42 +7,86 @@ on:
 
 jobs:
   build:
-    name: Build ChiquiOS (${{ matrix.arch }})
+    name: Build ChiquiOS (${{ matrix.edition }} - ${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, i386, arm64, ppc64el]
+        edition: [desktop, cli]
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 1. Habilitar emulación QEMU para arquitecturas foreign (arm64, ppc64el)
+      - name: Set up QEMU and Binfmt
+        uses: docker/setup-qemu-action@v3
+
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap xorriso mtools dosfstools qemu-user-static binfmt-support
+          sudo apt-get install -y live-build debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools
 
-      - name: Configure Live-Build with Plymouth & Quiet Boot
+      # 2. Configurar paquetes específicos según la edición (desktop vs cli)
+      - name: Prepare Package Lists
         run: |
+          mkdir -p config/package-lists
+
+          if [ "${{ matrix.edition }}" = "cli" ]; then
+            echo "Creando lista de paquetes para edición CLI..."
+            cat << 'EOF' > config/package-lists/chiquios.list.chroot
+systemd-sysv
+linux-image-generic
+live-boot
+live-config
+nano
+curl
+wget
+git
+python3
+netcat-openbsd
+nmap
+EOF
+          fi
+
+      # 3. Configurar Live-Build con soporte para QEMU en arm64 y ppc64el
+      - name: Configure Live-Build
+        run: |
+          BOOTSTRAP_FLAVOR="debootstrap"
+          
+          # Si la arquitectura es arm64 o ppc64el, usar qemu-debootstrap
+          if [ "${{ matrix.arch }}" = "arm64" ] || [ "${{ matrix.arch }}" = "ppc64el" ]; then
+            BOOTSTRAP_FLAVOR="qemu-debootstrap"
+          fi
+
+          # Configuración del bootappend
+          BOOT_PARAMS="boot=live"
+          if [ "${{ matrix.edition }}" = "desktop" ]; then
+            BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
+          fi
+
           lb config \
             --architectures ${{ matrix.arch }} \
+            --bootstrap $BOOTSTRAP_FLAVOR \
             --distribution stable \
             --binary-images iso-hybrid \
             --apt-recommends false \
             --bootloader isolinux \
-            --bootappend-live "boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
+            --bootappend-live "$BOOT_PARAMS"
 
+      # 4. Compilar la ISO
       - name: Build ISO
         run: |
           sudo lb build
 
+      # 5. Renombrar y subir artefacto
       - name: Rename and Prepare ISO Artifact
         run: |
-          mv live-image-*.hybrid.iso chiquiOS-${{ matrix.arch }}.iso || mv live-image-*.iso chiquiOS-${{ matrix.arch }}.iso
+          mv live-image-*.hybrid.iso chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || mv live-image-*.iso chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso
 
       - name: Upload ISO Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chiquiOS-${{ matrix.arch }}
+          name: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}
           path: "*.iso"
