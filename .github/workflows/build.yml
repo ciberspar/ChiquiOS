@@ -66,10 +66,6 @@ jobs:
             sudo chroot rootfs bash -c "apt-get update && apt-get install -y $KERNEL_PKG systemd systemd-sysv nano curl || true"
           fi
 
-          # Crear symlinks estandar para /boot/vmlinuz e /boot/initrd.img
-          sudo chroot rootfs bash -c "ln -sf /boot/vmlinuz-* /boot/vmlinuz || true"
-          sudo chroot rootfs bash -c "ln -sf /boot/initrd.img-* /boot/initrd.img || true"
-
           # Integración de bacus-pkg dentro del entorno chroot
           if [ -f "rootfs/usr/bin/bacus" ] || [ -d "rootfs/etc/bacus" ]; then
             sudo chroot rootfs bash -c "bacus pkg update || true"
@@ -84,9 +80,13 @@ jobs:
           # Eliminar completamente la carpeta de credenciales
           sudo rm -rf rootfs/etc/credstore.encrypted || true
 
-          mkdir -p iso_root/isolinux
+          mkdir -p iso_root/isolinux iso_root/boot
           sudo cp -a rootfs/* iso_root/
           
+          # Copiar físicamente el kernel y el initrd reales (evitando symlinks)
+          sudo cp -L rootfs/boot/vmlinuz-* iso_root/boot/vmlinuz || true
+          sudo cp -L rootfs/boot/initrd.img-* iso_root/boot/initrd.img || true
+
           # Copiar binarios de ISOLINUX
           cp /usr/lib/ISOLINUX/isolinux.bin iso_root/isolinux/
           cp /usr/lib/syslinux/modules/bios/ldlinux.c32 iso_root/isolinux/ || true
@@ -107,7 +107,7 @@ jobs:
           # Ajustar permisos para lectura
           sudo chmod -R a+r iso_root/
 
-          # Generar la ISO booteable con ISOLINUX sin nada de GRUB
+          # Generar la ISO booteable con ISOLINUX
           sudo xorriso -as mkisofs \
             -iso-level 3 \
             -full-iso9660-filenames \
