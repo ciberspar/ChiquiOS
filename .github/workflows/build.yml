@@ -84,7 +84,11 @@ jobs:
           }
           EOF
 
-          xorriso -as mkisofs \
+          # Ajustar permisos para que xorriso pueda leer archivos protegidos como /etc/shadow
+          sudo chmod -R a+r iso_root/
+
+          # Generar la ISO con sudo
+          sudo xorriso -as mkisofs \
             -iso-level 3 \
             -full-iso9660-filenames \
             -volid "CHIQUIOS_${{ matrix.arch }}" \
