@@ -52,11 +52,23 @@ jobs:
           sudo mount --bind /proc rootfs/proc
           sudo mount --bind /sys rootfs/sys
 
-          if [ "${{ matrix.edition }}" = "desktop" ]; then
-            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd systemd-sysv lightdm lxde-core nano curl || true"
-          else
-            sudo chroot rootfs bash -c "apt-get update && apt-get install -y systemd systemd-sysv nano curl || true"
+          # Determinar el kernel según arquitectura
+          KERNEL_PKG="linux-image-686"
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            KERNEL_PKG="linux-image-amd64"
+          elif [ "${{ matrix.arch }}" = "arm64" ]; then
+            KERNEL_PKG="linux-image-arm64"
           fi
+
+          if [ "${{ matrix.edition }}" = "desktop" ]; then
+            sudo chroot rootfs bash -c "apt-get update && apt-get install -y $KERNEL_PKG systemd systemd-sysv lightdm lxde-core nano curl || true"
+          else
+            sudo chroot rootfs bash -c "apt-get update && apt-get install -y $KERNEL_PKG systemd systemd-sysv nano curl || true"
+          fi
+
+          # Crear symlinks estandar para /boot/vmlinuz e /boot/initrd.img
+          sudo chroot rootfs bash -c "ln -sf /boot/vmlinuz-* /boot/vmlinuz || true"
+          sudo chroot rootfs bash -c "ln -sf /boot/initrd.img-* /boot/initrd.img || true"
 
           # Integración de bacus-pkg dentro del entorno chroot
           if [ -f "rootfs/usr/bin/bacus" ] || [ -d "rootfs/etc/bacus" ]; then
