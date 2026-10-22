@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         edition: [cli, desktop]
-        arch: [amd64]
+        arch: [amd64, arm64, i386]
 
     steps:
       - name: 📥 Checkout Repository
@@ -34,12 +34,11 @@ jobs:
           sudo curl -sSL "https://raw.githubusercontent.com/ciberspar/bacus-pkg/main/bin/bacusp" -o /tmp/chiquios-rootfs/usr/local/bin/bacusp
           sudo chmod +x /tmp/chiquios-rootfs/usr/local/bin/bacusp
 
-          # Inyectar archivos personalizados generales si existen en la carpeta chiquiOS/
           if [ -d "chiquiOS" ]; then
             sudo cp -r chiquiOS/* /tmp/chiquios-rootfs/ 2>/dev/null || true
           fi
 
-          # ⚙️ INYECTAR EL GRUB CORRESPONDIENTE SEGÚN LA EDICIÓN
+          # Inyectar el GRUB correcto según la edición
           if [ "${{ matrix.edition }}" = "desktop" ]; then
             if [ -f "configs/grub-desktop.cfg" ]; then
               sudo cp configs/grub-desktop.cfg /tmp/chiquios-rootfs/boot/grub/grub.cfg
@@ -55,7 +54,7 @@ jobs:
           fi
 
           if [ ! -f "/tmp/chiquios-rootfs/etc/hostname" ]; then
-            echo "chiquiOS-${{ matrix.edition }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
+            echo "chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}" | sudo tee /tmp/chiquios-rootfs/etc/hostname
           fi
 
       - name: 📦 Compress Rootfs to SquashFS
@@ -65,23 +64,19 @@ jobs:
 
       - name: 💿 Copy Kernel and Initrd
         run: |
-          # Extraer kernel e initrd del rootfs montado para que el GRUB los encuentre en la ISO
           sudo cp /tmp/chiquios-rootfs/boot/vmlinuz-* iso_root/vmlinuz
           sudo cp /tmp/chiquios-rootfs/boot/initrd.img-* iso_root/initrd.img
-          # Asegurar que existan en la ruta que busca el grub.cfg (/boot/)
           sudo mkdir -p iso_root/boot
           sudo cp iso_root/vmlinuz iso_root/boot/vmlinuz
           sudo cp iso_root/initrd.img iso_root/boot/initrd.img
 
       - name: 📀 Generate ISO Image
         run: |
-          # Mover el grub.cfg a la estructura de arranque de la ISO
           sudo mkdir -p iso_root/boot/grub
           if [ -f "/tmp/chiquios-rootfs/boot/grub/grub.cfg" ]; then
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg iso_root/boot/grub/grub.cfg
           fi
 
-          # Crear la ISO final con la etiqueta CHIQUIOS para que el kernel la reconozca
           sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -b boot/grub/i386-pc/eltorito.img -c boot/grub/boot.catalog -no-emul-boot -boot-load-size 4 -boot-info-table -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/ || \
           sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" -o chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso iso_root/
 
