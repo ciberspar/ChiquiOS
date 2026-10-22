@@ -19,7 +19,7 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install lightweight tools (No dependency hell)
+      - name: 🛠️ Install lightweight tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -50,43 +50,40 @@ jobs:
 
       - name: ⚙️ Configure Bootloaders
         run: |
-          # 1. Si es x86 (i386 / amd64), configuramos Syslinux de forma limpia
+          # 1. Si es x86 (i386 / amd64), configuramos Syslinux de forma robusta
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # Copiar archivos binarios necesarios de syslinux al árbol de la ISO
-            if [ -f "/usr/lib/SYSLINUX.MOD/isolinux.bin" ]; then
-              sudo cp /usr/lib/SYSLINUX.MOD/isolinux.bin iso_root/boot/syslinux/
-              sudo cp /usr/lib/syslinux/modules/bios/ldlinux.c32 iso_root/boot/syslinux/ || true
+            # Buscar y copiar isolinux.bin garantizando que quede en la ruta exacta que pide genisoimage
+            if [ -f "/usr/lib/ISOLINUX/isolinux.bin" ]; then
+              sudo cp /usr/lib/ISOLINUX/isolinux.bin iso_root/boot/syslinux/
+              sudo cp /usr/lib/ISOLINUX/ldlinux.c32 iso_root/boot/syslinux/ || true
             elif [ -f "/usr/lib/syslinux/isolinux.bin" ]; then
               sudo cp /usr/lib/syslinux/isolinux.bin iso_root/boot/syslinux/
               sudo cp /usr/lib/syslinux/ldlinux.c32 iso_root/boot/syslinux/ || true
+            elif [ -f "/usr/share/syslinux/isolinux.bin" ]; then
+              sudo cp /usr/share/syslinux/isolinux.bin iso_root/boot/syslinux/
+              sudo cp /usr/share/syslinux/ldlinux.c32 iso_root/boot/syslinux/ || true
             fi
 
-            # Crear el archivo de configuración de Syslinux universal
+            # Crear el archivo de configuración de Syslinux
             sudo bash -c 'cat > iso_root/boot/syslinux/isolinux.cfg <<EOF
-            UI menu.c32
             DEFAULT chiquios_normal
             TIMEOUT 50
             PROMPT 0
 
-            MENU TITLE chiquiOS Boot Menu
-
             LABEL chiquios_normal
-              MENU LABEL chiquiOS Live (Modo Normal)
               KERNEL /boot/vmlinuz
               APPEND initrd=/initrd.img boot=live quiet splash
 
             LABEL chiquios_safe
-              MENU LABEL chiquiOS Live (Modo Seguro / VESA)
               KERNEL /boot/vmlinuz
               APPEND initrd=/initrd.img boot=live nomodeset vga=normal
 
             LABEL chiquios_serial
-              MENU LABEL chiquiOS Live (Consola Serie)
               KERNEL /boot/vmlinuz
               APPEND initrd=/initrd.img boot=live console=tty0 console=ttyS0,115200n8 nomodeset
             EOF'
           else
-            # 2. Si es arm64, preparamos el arranque UEFI puro que ama el emulador
+            # 2. Si es arm64, preparamos el arranque UEFI puro
             sudo mkdir -p iso_root/EFI/BOOT
             sudo apt-get install -y --no-install-recommends grub-efi-arm64-bin || true
             sudo grub-mkimage -O arm64-efi -o /tmp/BOOTAA64.EFI -p /boot/grub iso9660 normal test reboot halt serial || true
@@ -95,10 +92,10 @@ jobs:
             fi
           fi
 
-      - name: 📀 Generate ISO Image (Hybrid Engine)
+      - name: 📀 Generate ISO Image
         run: |
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
-            # Generar ISO x86 con Syslinux e Isolinux (Sin errores de GRUB)
+            # Generar ISO x86 con Syslinux buscando explícitamente el binario
             sudo genisoimage -rational-rock -joliet -L -N -relaxed-filenames \
               -volid "CHIQUIOS" \
               -c boot/syslinux/boot.cat \
