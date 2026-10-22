@@ -104,19 +104,20 @@ jobs:
             sudo cp /tmp/chiquios-rootfs/boot/grub/grub.cfg iso_root/boot/grub/grub.cfg
           fi
 
-          # Para x86 (i386 o amd64), generar el core de arranque El Torito con GRUB
+          # Para x86 (i386 o amd64), generar el core El Torito HÍBRIDO (Pantallas + Terminales)
           if [ "${{ matrix.arch }}" = "i386" ] || [ "${{ matrix.arch }}" = "amd64" ]; then
             sudo mkdir -p iso_root/boot/grub/i386-pc
             
-            # Generar el core de GRUB para CD-ROM
-            sudo grub-mkimage -O i386-pc -o iso_root/boot/grub/i386-pc/eltorito.img -p /boot/grub iso9660 biosdisk test reboot halt normal
+            # Generar core de GRUB con drivers para pantallas (vga, vbe, video_bochs, gfxterm) y terminales (serial, terminal, console)
+            sudo grub-mkimage -O i386-pc -o iso_root/boot/grub/i386-pc/eltorito.img -p /boot/grub \
+              iso9660 biosdisk normal test reboot halt vga vbe video_bochs video_cirrus gfxterm font video all_video serial terminal console
             
-            # Copiar los módulos de GRUB
+            # Copiar todos los módulos de GRUB
             if [ -d "/usr/lib/grub/i386-pc" ]; then
               sudo cp -r /usr/lib/grub/i386-pc/* iso_root/boot/grub/i386-pc/ 2>/dev/null || true
             fi
 
-            # Armar la ISO híbrida con El Torito real generado
+            # Armar la ISO híbrida
             sudo genisoimage -rational-rock -joliet -volid "CHIQUIOS" \
               -b boot/grub/i386-pc/eltorito.img \
               -c boot/grub/boot.catalog \
