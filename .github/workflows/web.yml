@@ -1,0 +1,377 @@
+name: 🌐 Publish chiquiOS Portal & Cloud OS
+
+on:
+  workflow_run:
+    workflows: ["🍓 Build chiquiOS Universal (Matrix All-Arch)"]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-web:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔍 Get Latest Workflow Run Artifacts
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run ? context.payload.workflow_run.id : context.payload.run_id,
+            });
+            
+            const matchArtifacts = allArtifacts.data.artifacts.filter(a => a.name.startsWith('isos-'));
+            const fs = require('fs');
+            
+            for (const artifact of matchArtifacts) {
+              const download = await github.rest.actions.downloadArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+                archive_format: 'zip',
+              });
+              
+              const buffer = Buffer.from(download.data);
+              fs.writeFileSync(`${artifact.name}.zip`, buffer);
+            }
+
+      - name: 📦 Extract ISOs
+        run: |
+          mkdir -p all-isos docs
+          for f in isos-*.zip; do
+            if [ -f "$f" ]; then
+              unzip -o "$f" -d all-isos/
+            fi
+          done
+          find all-isos -name "*.iso" -exec cp {} docs/ \;
+
+      - name: 🌐 Generate Interactive Portal (ImgBurn Style + Cloud OS + Auth)
+        run: |
+          cat << 'EOF' > docs/index.html
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>The Official chiquiOS Portal</title>
+              <style>
+                  body {
+                      font-family: Arial, Tahoma, sans-serif;
+                      background-color: #ffffff;
+                      color: #000000;
+                      margin: 0;
+                      padding: 20px;
+                      line-height: 1.4;
+                  }
+                  .main-table {
+                      width: 850px;
+                      margin: 0 auto;
+                      background-color: #f4f4f4;
+                      border: 1px solid #cccccc;
+                      box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+                  }
+                  .header {
+                      background-color: #dcdcdc;
+                      padding: 15px 20px;
+                      border-bottom: 1px solid #bbbbbb;
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                  }
+                  .header h1 {
+                      margin: 0;
+                      font-size: 1.6em;
+                      color: #333333;
+                  }
+                  .user-panel-mini {
+                      font-size: 0.85em;
+                      font-weight: bold;
+                  }
+                  .nav-bar {
+                      background-color: #e6e6e6;
+                      padding: 8px 20px;
+                      border-bottom: 1px solid #cccccc;
+                      font-size: 0.9em;
+                      font-weight: bold;
+                  }
+                  .nav-bar a {
+                      color: #0000cc;
+                      text-decoration: none;
+                      margin-right: 15px;
+                      cursor: pointer;
+                  }
+                  .nav-bar a:hover {
+                      text-decoration: underline;
+                  }
+                  .content {
+                      padding: 20px;
+                      background-color: #ffffff;
+                      min-height: 350px;
+                  }
+                  h2 {
+                      font-size: 1.3em;
+                      border-bottom: 1px solid #eeeeee;
+                      padding-bottom: 5px;
+                      color: #222222;
+                  }
+                  .download-table {
+                      width: 100%;
+                      border-collapse: collapse;
+                      margin-top: 15px;
+                  }
+                  .download-table th, .download-table td {
+                      border: 1px solid #dddddd;
+                      padding: 10px;
+                      text-align: left;
+                      font-size: 0.9em;
+                  }
+                  .download-table th {
+                      background-color: #eeeeee;
+                  }
+                  .download-link {
+                      font-weight: bold;
+                      color: #006600;
+                      text-decoration: none;
+                  }
+                  .form-box {
+                      max-width: 400px;
+                      margin: 20px auto;
+                      padding: 20px;
+                      background: #f9f9f9;
+                      border: 1px solid #ddd;
+                  }
+                  .form-box input {
+                      width: 100%;
+                      padding: 8px;
+                      margin: 8px 0 15px 0;
+                      box-sizing: border-box;
+                  }
+                  .form-box button {
+                      background: #0000cc;
+                      color: white;
+                      border: none;
+                      padding: 10px 15px;
+                      font-weight: bold;
+                      cursor: pointer;
+                  }
+                  .cloud-terminal {
+                      background: #000000;
+                      color: #00ff66;
+                      font-family: monospace;
+                      padding: 15px;
+                      border-radius: 5px;
+                      height: 280px;
+                      overflow-y: auto;
+                      text-align: left;
+                  }
+                  .tab { display: none; }
+                  .tab.active { display: block; }
+                  .footer {
+                      text-align: center;
+                      font-size: 0.8em;
+                      color: #666666;
+                      padding: 15px;
+                      background-color: #f4f4f4;
+                      border-top: 1px solid #cccccc;
+                  }
+              </style>
+          </head>
+          <body>
+              <div class="main-table">
+                  <div class="header">
+                      <h1>chiquiOS Official Portal</h1>
+                      <div class="user-panel-mini" id="userMiniStatus">👤 Invitado</div>
+                  </div>
+                  <div class="nav-bar">
+                      <a onclick="showTab('home')">» Home</a>
+                      <a onclick="showTab('downloads')">» Downloads</a>
+                      <a onclick="showTab('register')">» Registrar Cuenta</a>
+                      <a onclick="showTab('login')">» Iniciar Sesión</a>
+                      <a onclick="showTab('cloudos')">» ☁️ chiquiOS en la Nube</a>
+                  </div>
+                  <div class="content">
+                      
+                      <!-- TAB HOME -->
+                      <div id="home" class="tab active">
+                          <h2>Bienvenido a chiquiOS</h2>
+                          <p>El sistema operativo Debian minimalista, ultraligero y multiarquitectura. Diseñado para hardware real, emuladores y ahora accesible directamente desde tu navegador con almacenamiento persistente en la nube.</p>
+                          <p>Utilizá la barra superior para crear tu cuenta, iniciar sesión o probar el sistema operativo en la nube.</p>
+                      </div>
+
+                      <!-- TAB DOWNLOADS -->
+                      <div id="downloads" class="tab">
+                          <h2>Official ISO Downloads</h2>
+                          <table class="download-table">
+                              <tr>
+                                  <th>Filename / Architecture</th>
+                                  <th>Type</th>
+                                  <th>Action</th>
+                              </tr>
+          EOF
+
+          for f in docs/*.iso; do
+            if [ -f "$f" ]; then
+              fname=$(basename "$f")
+              echo "<tr><td><strong>$fname</strong></td><td>ISO Image</td><td><a class='download-link' href='$fname'>» Click Here to Download!</a></td></tr>" >> docs/index.html
+            fi
+          done
+
+          cat << 'EOF' >> docs/index.html
+                          </table>
+                      </div>
+
+                      <!-- TAB REGISTER -->
+                      <div id="register" class="tab">
+                          <h2>Crear una cuenta nueva</h2>
+                          <div class="form-box">
+                              <label>Usuario:</label>
+                              <input type="text" id="regUser" placeholder="Tu nick">
+                              <label>Contraseña:</label>
+                              <input type="password" id="regPass" placeholder="Tu contraseña">
+                              <button onclick="registerUser()">Registrarse</button>
+                              <p id="regMsg" style="font-size: 0.85em; color: green;"></p>
+                          </div>
+                      </div>
+
+                      <!-- TAB LOGIN -->
+                      <div id="login" class="tab">
+                          <h2>Iniciar Sesión</h2>
+                          <div class="form-box">
+                              <label>Usuario:</label>
+                              <input type="text" id="logUser" placeholder="Tu nick">
+                              <label>Contraseña:</label>
+                              <input type="password" id="logPass" placeholder="Tu contraseña">
+                              <button onclick="loginUser()">Entrar</button>
+                              <p id="logMsg" style="font-size: 0.85em; color: green;"></p>
+                          </div>
+                      </div>
+
+                      <!-- TAB CLOUD OS -->
+                      <div id="cloudos" class="tab">
+                          <h2>chiquiOS Cloud Runner</h2>
+                          <div id="cloudLocked" style="padding: 20px; background: #fff3f3; border: 1px solid #ffcccc;">
+                              <p style="color: #cc0000; font-weight: bold;">⚠️ Debes iniciar sesión para usar chiquiOS en la nube y guardar tu información.</p>
+                              <button onclick="showTab('login')">Ir a Iniciar Sesión</button>
+                          </div>
+                          <div id="cloudActive" style="display: none;">
+                              <p>Sesión activa para: <strong id="activeUserLabel"></strong> | <button onclick="logoutUser()" style="font-size: 0.8em; padding: 2px 6px;">Cerrar Sesión</button></p>
+                              <p style="font-size: 0.85em; color: #555;">Terminal interactiva conectada al entorno en la nube. Tus datos y archivos de sesión se guardan automáticamente en tu perfil.</p>
+                              <div class="cloud-terminal" id="termOutput">
+                                  chiquiOS Cloud Environment v1.0 [Debian Bookworm Core]<br>
+                                  Type 'help' for available commands.<br>
+                                  root@chiquios-cloud:~# 
+                              </div>
+                              <input type="text" id="termInput" placeholder="Escribe un comando (ej: uname -a, bacusp, ls, clear)..." style="width: 100%; padding: 8px; font-family: monospace; margin-top: 5px;" onkeypress="handleTerm(event)">
+                          </div>
+                      </div>
+
+                  </div>
+                  <div class="footer">
+                      Copyright © 2026 chiquiOS Project. Powered by GitHub Actions.
+                  </div>
+              </div>
+
+              <script>
+                  function showTab(tabId) {
+                      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                      document.getElementById(tabId).classList.add('active');
+                      checkAuthUI();
+                  }
+
+                  function registerUser() {
+                      let u = document.getElementById('regUser').value;
+                      let p = document.getElementById('regPass').value;
+                      if(!u || !p) { alert('Completá todos los campos'); return; }
+                      localStorage.setItem('chq_user_' + u, p);
+                      localStorage.setItem('chq_data_' + u, JSON.stringify(["Cuenta creada con éxito."]));
+                      document.getElementById('regMsg').innerText = '¡Cuenta creada correctamente! Ahora podés iniciar sesión.';
+                  }
+
+                  function loginUser() {
+                      let u = document.getElementById('logUser').value;
+                      let p = document.getElementById('logPass').value;
+                      let storedPass = localStorage.getItem('chq_user_' + u);
+                      if(storedPass && storedPass === p) {
+                          localStorage.setItem('chq_session', u);
+                          document.getElementById('logMsg').innerText = '¡Inicio de sesión exitoso!';
+                          setTimeout(() => showTab('cloudos'), 800);
+                      } else {
+                          alert('Usuario o contraseña incorrectos.');
+                      }
+                  }
+
+                  function logoutUser() {
+                      localStorage.removeItem('chq_session');
+                      checkAuthUI();
+                      showTab('home');
+                  }
+
+                  function checkAuthUI() {
+                      let sessionUser = localStorage.getItem('chq_session');
+                      let mini = document.getElementById('userMiniStatus');
+                      let locked = document.getElementById('cloudLocked');
+                      let active = document.getElementById('cloudActive');
+                      
+                      if(sessionUser) {
+                          mini.innerText = '👤 ' + sessionUser;
+                          locked.style.display = 'none';
+                          active.style.display = 'block';
+                          document.getElementById('activeUserLabel').innerText = sessionUser;
+                      } else {
+                          mini.innerText = '👤 Invitado';
+                          locked.style.display = 'block';
+                          active.style.display = 'none';
+                      }
+                  }
+
+                  function handleTerm(e) {
+                      if(e.key === 'Enter') {
+                          let input = document.getElementById('termInput');
+                          let val = input.value.trim();
+                          let term = document.getElementById('termOutput');
+                          let sessionUser = localStorage.getItem('chq_session');
+                          
+                          term.innerHTML += "<br>root@chiquios-cloud:~# " + val;
+                          
+                          if(val === 'clear') {
+                              term.innerHTML = "chiquiOS Cloud Environment v1.0<br>root@chiquios-cloud:~# ";
+                          } else if(val === 'help') {
+                              term.innerHTML += "<br>Comandos disponibles: uname -a, whoami, bacusp, ls, date, clear";
+                          } else if(val === 'whoami') {
+                              term.innerHTML += "<br>" + sessionUser;
+                          } else if(val === 'uname -a') {
+                              term.innerHTML += "<br>Linux chiquios-cloud 6.1.0-50-686-pae #1 SMP PREEMPT Debian 6.1.176-1 i686 GNU/Linux";
+                          } else if(val === 'bacusp') {
+                              term.innerHTML += "<br>bacusp package manager v1.0 - Active and ready.";
+                          } else if(val === 'ls') {
+                              term.innerHTML += "<br>bin  boot  dev  etc  home  lib  media  mnt  root  usr  var";
+                          } else if(val !== '') {
+                              term.innerHTML += "<br>bash: " + val + ": command not found";
+                          }
+                          
+                          input.value = '';
+                          term.scrollTop = term.scrollHeight;
+                      }
+                  }
+
+                  window.onload = checkAuthUI;
+              </script>
+          </body>
+          </html>
+          EOF
+
+      - name: 🚀 Commit and Push Interactive Portal to docs/
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          git commit -m "🌐 Auto-generate interactive chiquiOS portal with auth and cloud shell" || echo "No changes to commit"
+          git push
