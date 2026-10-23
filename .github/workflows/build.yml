@@ -1,112 +1,77 @@
-
-name: Build ChiquiOS Live
-
+name: Build ChiquiOS Core
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: chiquios-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-x86-iso:
-    name: ISO ${{ matrix.arch }} / ${{ matrix.edition }}
+  build:
+    name: Build ChiquiOS (${{ matrix.arch }})
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-
     strategy:
       fail-fast: false
       matrix:
-        arch: [i386, amd64]
-        edition: [cli, desktop]
-
+        include:
+          - arch: amd64
+            iso_name: chiquiOS-core-x64.iso
+          - arch: i386
+            iso_name: chiquiOS-core-x32.iso
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install dependencies
+      - name: Install build tools
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y \
-            debootstrap \
-            qemu-user-static \
-            binfmt-support \
-            squashfs-tools \
-            grub-common \
+            live-build \
+            debian-archive-keyring \
+            xorriso \
             grub-pc-bin \
             grub-efi-amd64-bin \
-            grub-efi-ia32-bin \
-            xorriso \
-            mtools \
-            dosfstools \
-            file
-
-      - name: Enable i386 emulation
+            grub-efi-ia32-bin
+      - name: Configure ChiquiOS
         run: |
-          sudo update-binfmts --enable qemu-i386 || true
-
-      - name: Build root filesystem
+          lb config \
+            --mode debian \
+            --distribution bookworm \
+            --architectures "${{ matrix.arch }}" \
+            --binary-images iso-hybrid \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --debian-installer false \
+            --bootloaders "grub-efi grub-pc" \
+            --apt-recommends false \
+            --iso-volume "CHIQUIOS"
+      - name: Configure package list
         run: |
-          chmod +x scripts/*.sh
-          sudo bash scripts/build-rootfs.sh \
-            "${{ matrix.arch }}" \
-            "${{ matrix.edition }}"
-
-      - name: Create bootable ISO
+          mkdir -p config/package-lists
+          cat > config/package-lists/core.list.chroot <<'EOF'
+          sudo
+          ca-certificates
+          network-manager
+          iproute2
+          iputils-ping
+          nano
+          less
+          curl
+          wget
+          git
+          xz-utils
+          EOF
+      - name: Build ISO
         run: |
-          sudo bash scripts/make-image.sh \
-            "${{ matrix.arch }}" \
-            "${{ matrix.edition }}"
-
+          sudo lb build
+      - name: Name ISO
+        run: |
+          ISO="$(find . -maxdepth 1 -type f -name '*.iso' -print -quit)"
+          test -n "$ISO"
+          mv "$ISO" "${{ matrix.iso_name }}"
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
-          name: chiquiOS-${{ matrix.arch }}-${{ matrix.edition }}-iso
-          path: output/chiquiOS-${{ matrix.arch }}-${{ matrix.edition }}.iso
-          if-no-files-found: error
-          retention-days: 14
-
-  build-arm64-rootfs:
-    name: ARM64 root filesystem
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            debootstrap \
-            qemu-user-static \
-            binfmt-support \
-            tar \
-            xz-utils
-
-      - name: Enable ARM64 emulation
-        run: |
-          sudo update-binfmts --enable qemu-aarch64 || true
-
-      - name: Build ARM64 root filesystem
-        run: |
-          chmod +x scripts/*.sh
-          sudo bash scripts/build-rootfs.sh arm64 desktop
-          sudo tar -C work/arm64-desktop/rootfs \
-            -czf output-chiquiOS-arm64-desktop-rootfs.tar.gz .
-
-      - name: Upload ARM64 root filesystem
-        uses: actions/upload-artifact@v4
-        with:
-          name: chiquiOS-arm64-desktop-rootfs
-          path: output-chiquiOS-arm64-desktop-rootfs.tar.gz
+          name: chiquiOS-core-${{ matrix.arch }}
+          path: ${{ matrix.iso_name }}
           if-no-files-found: error
           retention-days: 14
