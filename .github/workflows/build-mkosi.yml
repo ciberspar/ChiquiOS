@@ -1,27 +1,21 @@
-
-name: Build ChiquiOS x32
+name: Build ChiquiOS
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
-      - ".github/workflows/build-mkosi.yml"
       - "chiquios/**"
-      - "README.md"
+      - ".github/workflows/build-chiquios.yml"
 
 permissions:
   contents: read
 
-concurrency:
-  group: chiquios-x32-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
-    name: Build ${{ matrix.edition }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    name: Build ChiquiOS ${{ matrix.edition }}
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
@@ -33,23 +27,19 @@ jobs:
             profile: chiquios-pixel
 
     steps:
-      - name: Descargar ChiquiOS
+      - name: Descargar repositorio ChiquiOS
         uses: actions/checkout@v4
 
-      - name: Descargar Bacus-Pkg oficial
+      - name: Descargar Bacus-Pkg
         run: |
-          set -euxo pipefail
           git clone --depth 1 \
             https://github.com/ciberspar/Bacus-pkg.git \
             "$RUNNER_TEMP/Bacus-pkg"
-          test -f "$RUNNER_TEMP/Bacus-pkg/bin/bacusp"
 
-      - name: Preparar directorios
-        run: |
-          mkdir -p dist
-          chmod -R a+rX chiquios
+      - name: Preparar directorio de salida
+        run: mkdir -p dist
 
-      - name: Construir ISO Alpine x86
+      - name: Construir imagen Alpine personalizada
         env:
           EDITION: ${{ matrix.edition }}
           PROFILE: ${{ matrix.profile }}
@@ -70,22 +60,34 @@ jobs:
                 busybox fakeroot git \
                 syslinux xorriso squashfs-tools grub mtools
 
-              cd /work
-
               git clone --depth 1 \
                 --branch 3.24-stable \
                 https://github.com/alpinelinux/aports.git \
                 /tmp/aports
 
-              cp chiquios/mkimg.chiquios-cli.sh \
+              cp /work/chiquios/mkimg.chiquios-cli.sh \
                 /tmp/aports/scripts/
-              cp chiquios/mkimg.chiquios-pixel.sh \
+
+              cp /work/chiquios/mkimg.chiquios-pixel.sh \
                 /tmp/aports/scripts/
-              cp chiquios/genapkovl-chiquios.sh \
+
+              cp /work/chiquios/genapkovl-chiquios.sh \
                 /tmp/aports/scripts/
 
               chmod +x /tmp/aports/scripts/mkimg.chiquios-*.sh
               chmod +x /tmp/aports/scripts/genapkovl-chiquios.sh
+
+              # Compatibilidad con APK moderno:
+              # quitar la opción antigua --no-chown.
+              sed -i \
+                "s/ add --initdb --no-chown/ add --initdb/" \
+                /tmp/aports/scripts/mkimage.sh
+
+              if grep -q -- "--no-chown" \
+                /tmp/aports/scripts/mkimage.sh; then
+                echo "ERROR: no se pudo aplicar el parche de APK."
+                exit 1
+              fi
 
               export BACUS_SOURCE=/bacuspkg
               export CHIQUIOS_EDITION
@@ -105,10 +107,17 @@ jobs:
                 https://dl-cdn.alpinelinux.org/alpine/v3.24/community
             '
 
-      - name: Publicar ISO
+      - name: Comprobar archivos generados
+        if: always()
+        run: |
+          echo "Archivos disponibles:"
+          find dist -maxdepth 2 -type f -printf '%p (%s bytes)\n' || true
+
+      - name: Publicar artefactos
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-x32-${{ matrix.edition }}
-          path: dist/*.iso
+          name: chiquios-${{ matrix.edition }}-x86
+          path: dist/*
           if-no-files-found: error
           retention-days: 14
