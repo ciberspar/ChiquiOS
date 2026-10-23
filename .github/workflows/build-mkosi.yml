@@ -55,7 +55,7 @@ jobs:
           set -euxo pipefail
           sed \
             -e 's/^Release=.*/Release=bookworm/' \
-            -e 's/^Architecture=.*/Architecture=i386/' \
+            -e 's/^Architecture=.*/Architecture=x86/' \
             -e 's/^Format=.*/Format=disk/' \
             -e 's/^Output=.*/Output=chiquios-x32/' \
             -e '/^\[Content\]/a BiosBootloader=grub' \
@@ -118,7 +118,7 @@ jobs:
           set -euxo pipefail
           sed \
             -e 's/^Release=.*/Release=bookworm/' \
-            -e 's/^Architecture=.*/Architecture=amd64/' \
+            -e 's/^Architecture=.*/Architecture=x86-64/' \
             -e 's/^Format=.*/Format=disk/' \
             -e 's/^Output=.*/Output=chiquios-x64/' \
             -e '/^\[Content\]/a BiosBootloader=grub' \
