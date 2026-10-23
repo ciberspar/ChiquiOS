@@ -8,57 +8,25 @@ workflow_dispatch:
 permissions:
 contents: read
 
-concurrency:
-group: chiquios-${{ github.ref }}
-cancel-in-progress: true
-
 jobs:
-validate:
-name: Validate sources
-runs-on: ubuntu-22.04
-steps:
-- name: Checkout ChiquiOS
-uses: actions/checkout@v4
-with:
-path: chiquios-repo
-
-  - name: Verify project files
-    shell: bash
-    run: |
-      set -Eeuo pipefail
-      for file in \
-        chiquios-repo/chiquios/mkimg_chiquios-cli.sh \
-        chiquios-repo/chiquios/mkimg_chiquios-desktop.sh \
-        chiquios-repo/chiquios/genapkovl-chiquios.sh
-      do
-        if [[ ! -f "$file" ]]; then
-          echo "::error::Missing file: $file"
-          exit 1
-        fi
-        bash -n "$file"
-      done
-
 build:
 name: Build ChiquiOS ${{ matrix.edition }} x86
-needs: validate
 runs-on: ubuntu-22.04
 timeout-minutes: 180
-strategy:
-fail-fast: false
-matrix:
-include:
-- edition: cli
-profile: chiquios_cli
-source: mkimg_chiquios-cli.sh
-- edition: desktop
-profile: chiquios_desktop
-source: mkimg_chiquios-desktop.sh
 
+strategy:
+  fail-fast: false
+  matrix:
+    include:
+      - edition: cli
+        profile: chiquios_cli
+        script: mkimg_chiquios-cli.sh
+      - edition: desktop
+        profile: chiquios_desktop
+        script: mkimg_chiquios-desktop.sh
 steps:
   - name: Checkout ChiquiOS
     uses: actions/checkout@v4
-    with:
-      path: chiquios-repo
   - name: Checkout Bacus-Pkg
     uses: actions/checkout@v4
     with:
@@ -70,26 +38,41 @@ steps:
       repository: alpinelinux/aports
       ref: 3.24-stable
       path: aports
-  - name: Install build dependencies
-    run: |
-      set -Eeuo pipefail
-      sudo apt-get update
-      sudo apt-get install -y docker.io git file
-      sudo systemctl start docker
-      sudo docker version
-  - name: Install ChiquiOS profile
+  - name: Validate files
     env:
-      PROFILE: ${{ matrix.profile }}
-      SOURCE: ${{ matrix.source }}
+      PROFILE_SCRIPT: ${{ matrix.script }}
     shell: bash
     run: |
       set -Eeuo pipefail
-      test -f "chiquios-repo/chiquios/$SOURCE"
-      test -f chiquios-repo/chiquios/genapkovl-chiquios.sh
+      echo "=== Raíz del repositorio ==="
+      pwd
+      ls -la
+      ls -la chiquios || true
+      test -f "chiquios/$PROFILE_SCRIPT" || {
+        echo "::error::No existe chiquios/$PROFILE_SCRIPT"
+        exit 1
+      }
+      test -f chiquios/genapkovl-chiquios.sh || {
+        echo "::error::No existe chiquios/genapkovl-chiquios.sh"
+        exit 1
+      }
       test -f aports/scripts/mkimage.sh
       test -f aports/scripts/mkimg.base.sh
-      install -m 755 "chiquios-repo/chiquios/$SOURCE" "aports/scripts/mkimg.$PROFILE.sh"
-      install -m 755 chiquios-repo/chiquios/genapkovl-chiquios.sh aports/scripts/genapkovl-chiquios.sh
+      bash -n "chiquios/$PROFILE_SCRIPT"
+      bash -n chiquios/genapkovl-chiquios.sh
+  - name: Install ChiquiOS profiles
+    env:
+      PROFILE: ${{ matrix.profile }}
+      PROFILE_SCRIPT: ${{ matrix.script }}
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      install -m 755 \
+        "chiquios/$PROFILE_SCRIPT" \
+        "aports/scripts/mkimg.$PROFILE.sh"
+      install -m 755 \
+        chiquios/genapkovl-chiquios.sh \
+        aports/scripts/genapkovl-chiquios.sh
   - name: Build ISO
     env:
       PROFILE: ${{ matrix.profile }}
@@ -108,10 +91,23 @@ steps:
         -v "$PWD/work:/work" \
         alpine:3.24 \
         sh -euxc '
-          apk add --no-cache alpine-conf abuild apk-tools busybox fakeroot git syslinux xorriso squashfs-tools grub mtools sudo coreutils bash ca-certificates
+          apk add --no-cache \
+            alpine-conf \
+            abuild \
+            apk-tools \
+            busybox \
+            fakeroot \
+            git \
+            syslinux \
+            xorriso \
+            squashfs-tools \
+            grub \
+            mtools \
+            sudo \
+            coreutils \
+            bash \
+            ca-certificates
           cd /aports/scripts
-          test -f ./mkimage.sh
-          test -f "./mkimg.${PROFILE}.sh"
           sed -i "s/--no-chown//g" ./mkimage.sh
           install -d -m 700 /root/.abuild
           abuild-keygen -a -i -n
@@ -134,13 +130,13 @@ steps:
       set -Eeuo pipefail
       ISO="$(find dist -maxdepth 1 -type f -iname '*.iso' -print -quit)"
       if [[ -z "$ISO" ]]; then
-        echo "::error::No ISO generated for $EDITION"
+        echo "::error::No se generó la ISO de $EDITION"
         find dist -maxdepth 3 -type f -print || true
         exit 1
       fi
       file "$ISO"
-      ls -lh "$ISO"
       sha256sum "$ISO"
+      ls -lh "$ISO"
   - name: Upload ISO
     uses: actions/upload-artifact@v4
     with:
