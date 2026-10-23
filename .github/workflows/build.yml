@@ -1,15 +1,22 @@
+
 name: Build ChiquiOS Core
+
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   build:
     name: Build ChiquiOS (${{ matrix.arch }})
     runs-on: ubuntu-22.04
+    container:
+      image: debian:bookworm
     timeout-minutes: 180
+
     strategy:
       fail-fast: false
       matrix:
@@ -18,70 +25,43 @@ jobs:
             iso_name: chiquiOS-core-x64.iso
           - arch: i386
             iso_name: chiquiOS-core-x32.iso
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
       - name: Install build tools
         run: |
           set -eux
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            git \
             live-build \
             debootstrap \
             debian-archive-keyring \
             ca-certificates \
             curl \
-            gnupg \
+            wget \
+            xz-utils \
             xorriso \
             grub-pc-bin \
             grub-efi-amd64-bin \
-            grub-efi-ia32-bin
+            grub-efi-ia32-bin \
+            syslinux \
+            syslinux-common
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show versions
+        run: |
           lb --version
           debootstrap --version
-      - name: Prepare official Debian Bookworm keyring
-        shell: bash
-        run: |
-          set -euo pipefail
-          TEMP_KEYS="$RUNNER_TEMP/debian-keys"
-          mkdir -p "$TEMP_KEYS"
-          chmod 700 "$TEMP_KEYS"
-          curl --fail --silent --show-error --location \
-            https://ftp-master.debian.org/keys/release-12.asc \
-            -o "$TEMP_KEYS/release-12.asc"
-          curl --fail --silent --show-error --location \
-            https://ftp-master.debian.org/keys/archive-key-12.asc \
-            -o "$TEMP_KEYS/archive-key-12.asc"
-          # Verify the official Bookworm release-key fingerprint.
-          gpg --batch --show-keys --with-colons \
-            "$TEMP_KEYS/release-12.asc" > "$TEMP_KEYS/release.txt"
-          grep -q \
-            '4D64FEC119C2029067D6E791F8D2585B8783D481' \
-            "$TEMP_KEYS/release.txt"
-          # Verify the official Bookworm archive-key fingerprint.
-          gpg --batch --show-keys --with-colons \
-            "$TEMP_KEYS/archive-key-12.asc" > "$TEMP_KEYS/archive.txt"
-          grep -q \
-            'B8B80B5B623EAB6AD8775C45B7C5D7D6350947F8' \
-            "$TEMP_KEYS/archive.txt"
-          # Import both keys into a temporary GPG keyring.
-          export GNUPGHOME="$TEMP_KEYS/gnupg"
-          mkdir -m 700 "$GNUPGHOME"
-          gpg --batch --import "$TEMP_KEYS/release-12.asc"
-          gpg --batch --import "$TEMP_KEYS/archive-key-12.asc"
-          gpg --batch --export \
-            4D64FEC119C2029067D6E791F8D2585B8783D481 \
-            B8B80B5B623EAB6AD8775C45B7C5D7D6350947F8 \
-            > "$TEMP_KEYS/bookworm.gpg"
-          test -s "$TEMP_KEYS/bookworm.gpg"
-          sudo install -D -m 0644 \
-            "$TEMP_KEYS/bookworm.gpg" \
-            /usr/local/share/keyrings/chiquios-bookworm.gpg
-          echo "Debian Bookworm keys verified and installed."
+
       - name: Configure ChiquiOS
         run: |
           set -eux
-          sudo lb clean --purge || true
+
+          lb clean --purge || true
           rm -rf config
+
           lb config \
             --mode debian \
             --distribution bookworm \
@@ -90,15 +70,17 @@ jobs:
             --archive-areas "main contrib non-free non-free-firmware" \
             --debian-installer none \
             --keyring-packages debian-archive-keyring \
-            --debootstrap-options "--keyring=/usr/local/share/keyrings/chiquios-bookworm.gpg" \
             --apt-recommends false \
+            --apt-secure true \
             --iso-application "ChiquiOS Core" \
             --iso-publisher "ChiquiOS" \
             --iso-volume "CHIQUIOS"
-      - name: Configure package list
+
+      - name: Configure core packages
         run: |
           set -eux
           mkdir -p config/package-lists
+
           cat > config/package-lists/core.list.chroot <<'EOF'
           sudo
           ca-certificates
@@ -112,21 +94,27 @@ jobs:
           git
           xz-utils
           EOF
+
       - name: Build ISO
         run: |
           set -eux
-          sudo lb build
+          lb build
+
       - name: Find and rename ISO
         shell: bash
         run: |
           set -euo pipefail
+
           ISO="$(find . -maxdepth 1 -type f -name '*.iso' -print -quit)"
+
           if [ -z "$ISO" ]; then
             echo "ERROR: No se generó ninguna ISO."
             exit 1
           fi
+
           mv "$ISO" "${{ matrix.iso_name }}"
           ls -lh "${{ matrix.iso_name }}"
+
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
