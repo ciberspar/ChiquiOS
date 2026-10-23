@@ -1,5 +1,4 @@
 name: Build ChiquiOS
-
 on:
   workflow_dispatch:
   push:
@@ -8,15 +7,12 @@ on:
     paths:
       - "chiquios/**"
       - ".github/workflows/build-chiquios.yml"
-
 permissions:
   contents: read
-
 jobs:
   build:
     name: Build ChiquiOS ${{ matrix.edition }}
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
@@ -25,29 +21,23 @@ jobs:
             profile: chiquios-cli
           - edition: pixel
             profile: chiquios-pixel
-
     steps:
       - name: Descargar repositorio ChiquiOS
         uses: actions/checkout@v4
-
       - name: Descargar Bacus-Pkg
         run: |
           git clone --depth 1 \
             https://github.com/ciberspar/Bacus-pkg.git \
             "$RUNNER_TEMP/Bacus-pkg"
-
       - name: Preparar directorio de salida
         run: mkdir -p dist
-
       - name: Construir imagen Alpine personalizada
         env:
           EDITION: ${{ matrix.edition }}
           PROFILE: ${{ matrix.profile }}
         run: |
           set -euxo pipefail
-
           docker pull alpine:3.24
-
           docker run --rm \
             --privileged \
             -e CHIQUIOS_EDITION="$EDITION" \
@@ -59,42 +49,32 @@ jobs:
                 alpine-conf abuild apk-tools \
                 busybox fakeroot git \
                 syslinux xorriso squashfs-tools grub mtools
-
               git clone --depth 1 \
                 --branch 3.24-stable \
                 https://github.com/alpinelinux/aports.git \
                 /tmp/aports
-
               cp /work/chiquios/mkimg.chiquios-cli.sh \
                 /tmp/aports/scripts/
-
               cp /work/chiquios/mkimg.chiquios-pixel.sh \
                 /tmp/aports/scripts/
-
               cp /work/chiquios/genapkovl-chiquios.sh \
                 /tmp/aports/scripts/
-
               chmod +x /tmp/aports/scripts/mkimg.chiquios-*.sh
               chmod +x /tmp/aports/scripts/genapkovl-chiquios.sh
-
               # Compatibilidad con APK moderno:
               # quitar la opción antigua --no-chown.
               sed -i \
                 "s/ add --initdb --no-chown/ add --initdb/" \
                 /tmp/aports/scripts/mkimage.sh
-
               if grep -q -- "--no-chown" \
                 /tmp/aports/scripts/mkimage.sh; then
                 echo "ERROR: no se pudo aplicar el parche de APK."
                 exit 1
               fi
-
               export BACUS_SOURCE=/bacuspkg
               export CHIQUIOS_EDITION
               export CHIQUIOS_PROFILE
-
               cd /tmp/aports/scripts
-
               sh ./mkimage.sh \
                 --tag v3.24 \
                 --outdir /work/dist \
@@ -106,13 +86,11 @@ jobs:
                 --repository \
                 https://dl-cdn.alpinelinux.org/alpine/v3.24/community
             '
-
       - name: Comprobar archivos generados
         if: always()
         run: |
           echo "Archivos disponibles:"
           find dist -maxdepth 2 -type f -printf '%p (%s bytes)\n' || true
-
       - name: Publicar artefactos
         if: success()
         uses: actions/upload-artifact@v4
