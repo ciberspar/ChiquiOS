@@ -1,185 +1,145 @@
 
-name: Build ChiquiOS with Mkosi
+name: Build ChiquiOS
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
     paths:
       - "mkosi.conf"
-      - "mkosi.*"
-      - "config/**"
-      - "scripts/**"
-      - "packages/**"
-      - "modules/**"
-      - "bin/**"
       - ".github/workflows/build-mkosi.yml"
-
-  pull_request:
-    branches:
-      - main
-
-  schedule:
-    - cron: "0 8 * * 0"
 
 permissions:
   contents: read
 
 concurrency:
-  group: chiquios-build-${{ github.ref }}
+  group: chiquios-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build ChiquiOS - Debian 13
+  build-x32:
+    name: ChiquiOS x32 - Debian 12
     runs-on: ubuntu-24.04
     timeout-minutes: 180
 
     steps:
-      - name: Checkout ChiquiOS
+      - name: Descargar ChiquiOS
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Show runner information
-        shell: bash
+      - name: Instalar dependencias
         run: |
           set -euxo pipefail
-          uname -a
-          id
-          df -h
-
-      - name: Install build dependencies
-        shell: bash
-        run: |
-          set -euxo pipefail
-
           sudo apt-get update
-
           sudo apt-get install -y \
-            git \
-            python3 \
-            python3-venv \
-            python3-apt \
-            systemd-container \
-            debootstrap \
-            apt \
+            git python3 python3-apt \
+            debootstrap ca-certificates \
             debian-archive-keyring \
-            ca-certificates \
-            curl \
-            xz-utils \
-            dosfstools \
-            e2fsprogs \
-            mtools \
-            parted \
-            qemu-utils \
-            grub-common \
-            grub-pc-bin \
-            grub-efi-amd64-bin \
-            grub2-common \
-            xorriso \
-            squashfs-tools \
-            rsync \
-            util-linux \
-            dbus \
-            gnupg
+            grub-common grub-pc-bin grub2-common \
+            grub-efi-ia32-bin xorriso \
+            dosfstools e2fsprogs mtools \
+            qemu-system-x86 ovmf
 
-      - name: Download Mkosi
-        shell: bash
+      - name: Descargar Mkosi
         run: |
           set -euxo pipefail
-
-          MKOSI_DIR="$RUNNER_TEMP/mkosi"
-
-          git clone \
-            --depth 1 \
+          git clone --depth 1 \
             https://github.com/systemd/mkosi.git \
-            "$MKOSI_DIR"
+            "$RUNNER_TEMP/mkosi"
+          test -x "$RUNNER_TEMP/mkosi/bin/mkosi"
+          echo "MKOSI_BIN=$RUNNER_TEMP/mkosi/bin/mkosi" \
+            >> "$GITHUB_ENV"
 
-          MKOSI_BIN="$MKOSI_DIR/bin/mkosi"
-
-          if [ ! -x "$MKOSI_BIN" ]; then
-            echo "::error::Mkosi executable was not found."
-            exit 1
-          fi
-
-          echo "$MKOSI_DIR/bin" >> "$GITHUB_PATH"
-
-          "$MKOSI_BIN" --version
-
-      - name: Validate ChiquiOS configuration
-        shell: bash
+      - name: Configurar imagen x32
         run: |
           set -euxo pipefail
+          sed \
+            -e 's/^Release=.*/Release=bookworm/' \
+            -e 's/^Architecture=.*/Architecture=i386/' \
+            -e 's/^Format=.*/Format=disk/' \
+            -e 's/^Output=.*/Output=chiquios-x32/' \
+            -e '/^\[Content\]/a BiosBootloader=grub' \
+            mkosi.conf > "$RUNNER_TEMP/mkosi-x32.conf"
 
-          if [ ! -f mkosi.conf ]; then
-            echo "::error::mkosi.conf is missing from the repository root."
-            exit 1
-          fi
+          mkdir -p "$RUNNER_TEMP/chiquios-x32"
+          cp "$RUNNER_TEMP/mkosi-x32.conf" \
+            "$RUNNER_TEMP/chiquios-x32/mkosi.conf"
 
-          MKOSI_BIN="$RUNNER_TEMP/mkosi/bin/mkosi"
-
-          "$MKOSI_BIN" summary
-
-      - name: Build ChiquiOS
-        shell: bash
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      - name: Construir imagen x32
+        working-directory: ${{ runner.temp }}/chiquios-x32
         run: |
           set -euxo pipefail
+          sudo "$MKOSI_BIN" summary
+          sudo "$MKOSI_BIN" --force build
 
-          MKOSI_BIN="$RUNNER_TEMP/mkosi/bin/mkosi"
-
-          if [ ! -x "$MKOSI_BIN" ]; then
-            echo "::error::Mkosi executable is missing."
-            exit 1
-          fi
-
-          "$MKOSI_BIN" --version
-
-          sudo -E "$MKOSI_BIN" \
-            --force \
-            --debug \
-            build
-
-      - name: Inspect generated images
+      - name: Publicar artefactos x32
         if: always()
-        shell: bash
-        run: |
-          set -u
-
-          echo "Searching for generated images..."
-
-          find . -maxdepth 5 -type f \
-            \( -name '*.iso' \
-            -o -name '*.raw' \
-            -o -name '*.img' \
-            -o -name '*.qcow2' \
-            -o -name '*.manifest' \
-            -o -name '*SHA256SUMS*' \) \
-            -print || true
-
-          if [ -d mkosi.output ]; then
-            echo "Contents of mkosi.output:"
-            find mkosi.output -maxdepth 5 -type f -print
-          fi
-
-          df -h
-
-      - name: Upload ChiquiOS images
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-debian13-${{ github.sha }}
-          path: |
-            mkosi.output/**/*.iso
-            mkosi.output/**/*.raw
-            mkosi.output/**/*.img
-            mkosi.output/**/*.qcow2
-            mkosi.output/**/*.manifest
-            mkosi.output/**/*.SHA256SUMS
-          if-no-files-found: error
-          compression-level: 1
+          name: chiquios-x32-bookworm
+          path: ${{ runner.temp }}/chiquios-x32/mkosi.output/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  build-x64:
+    name: ChiquiOS x64 - Debian 12
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Descargar ChiquiOS
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            git python3 python3-apt \
+            debootstrap ca-certificates \
+            debian-archive-keyring \
+            grub-common grub-pc-bin grub-efi-amd64-bin \
+            grub2-common xorriso \
+            dosfstools e2fsprogs mtools \
+            qemu-system-x86 ovmf
+
+      - name: Descargar Mkosi
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 \
+            https://github.com/systemd/mkosi.git \
+            "$RUNNER_TEMP/mkosi"
+          test -x "$RUNNER_TEMP/mkosi/bin/mkosi"
+          echo "MKOSI_BIN=$RUNNER_TEMP/mkosi/bin/mkosi" \
+            >> "$GITHUB_ENV"
+
+      - name: Configurar imagen x64
+        run: |
+          set -euxo pipefail
+          sed \
+            -e 's/^Release=.*/Release=bookworm/' \
+            -e 's/^Architecture=.*/Architecture=amd64/' \
+            -e 's/^Format=.*/Format=disk/' \
+            -e 's/^Output=.*/Output=chiquios-x64/' \
+            -e '/^\[Content\]/a BiosBootloader=grub' \
+            mkosi.conf > "$RUNNER_TEMP/mkosi-x64.conf"
+
+          mkdir -p "$RUNNER_TEMP/chiquios-x64"
+          cp "$RUNNER_TEMP/mkosi-x64.conf" \
+            "$RUNNER_TEMP/chiquios-x64/mkosi.conf"
+
+      - name: Construir imagen x64
+        working-directory: ${{ runner.temp }}/chiquios-x64
+        run: |
+          set -euxo pipefail
+          sudo "$MKOSI_BIN" summary
+          sudo "$MKOSI_BIN" --force build
+
+      - name: Publicar artefactos x64
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquios-x64-bookworm
+          path: ${{ runner.temp }}/chiquios-x64/mkosi.output/**
+          if-no-files-found: warn
           retention-days: 14
