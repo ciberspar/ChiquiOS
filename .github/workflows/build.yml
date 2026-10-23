@@ -9,7 +9,7 @@ jobs:
   build:
     name: Build ChiquiOS (${{ matrix.arch }})
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -21,18 +21,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install build tools
+      - name: Install build tools and Debian keyring
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             live-build \
+            debootstrap \
             debian-archive-keyring \
+            ca-certificates \
             xorriso \
             grub-pc-bin \
             grub-efi-amd64-bin \
             grub-efi-ia32-bin
-      - name: Show live-build version
-        run: lb --version
+          sudo apt-get install --reinstall -y \
+            debian-archive-keyring
+          echo "=== live-build ==="
+          lb --version
+          echo "=== debootstrap ==="
+          debootstrap --version
+          echo "=== Debian keyring ==="
+          dpkg-query -W debian-archive-keyring
+          test -s /usr/share/keyrings/debian-archive-keyring.gpg
+      - name: Reset generated live-build configuration
+        run: |
+          sudo lb clean --purge || true
+          rm -rf config
       - name: Configure ChiquiOS
         run: |
           lb config \
@@ -41,13 +54,12 @@ jobs:
             --architectures "${{ matrix.arch }}" \
             --binary-images iso-hybrid \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --debian-installer false \
+            --debian-installer none \
+            --keyring-packages debian-archive-keyring \
             --apt-recommends false \
+            --iso-application "ChiquiOS Core" \
+            --iso-publisher "ChiquiOS" \
             --iso-volume "CHIQUIOS"
-      - name: Configure GRUB
-        run: |
-          mkdir -p config/bootloaders
-          printf '%s\n' grub-pc grub-efi > config/bootloaders.list
       - name: Configure package list
         run: |
           mkdir -p config/package-lists
@@ -71,7 +83,8 @@ jobs:
         run: |
           ISO="$(find . -maxdepth 1 -type f -name '*.iso' -print -quit)"
           if [ -z "$ISO" ]; then
-            echo "ERROR: live-build no generó ninguna ISO."
+            echo "ERROR: no se generó ninguna ISO."
+            find . -maxdepth 2 -type f -print | head -200
             exit 1
           fi
           mv "$ISO" "${{ matrix.iso_name }}"
