@@ -1,11 +1,15 @@
-on:
+name: Build ChiquiOS i386 BIOS
+
+'on':
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build ChiquiOS (${{ matrix.edition }} - i386)
+    name: ChiquiOS ${{ matrix.edition }} i386
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
