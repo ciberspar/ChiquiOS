@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    name: Build ChiquiOS ${{ matrix.edition }}
+    name: ChiquiOS ${{ matrix.edition }} x86
     runs-on: ubuntu-22.04
 
     strategy:
@@ -36,10 +36,12 @@ jobs:
         with:
           path: chiquios-repo
 
-      - name: Instalar herramientas
+      - name: Comprobar herramientas del runner
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git docker.io
+          set -eu
+          git --version
+          docker --version
+          docker info
 
       - name: Descargar Bacus-Pkg
         run: |
@@ -47,14 +49,14 @@ jobs:
             https://github.com/ciberspar/Bacus-pkg.git \
             bacus-pkg
 
-      - name: Descargar aports
+      - name: Descargar herramientas de Alpine
         run: |
           git clone --depth 1 \
             --branch 3.24-stable \
             https://github.com/alpinelinux/aports.git \
             aports
 
-      - name: Preparar perfiles
+      - name: Instalar perfiles de ChiquiOS
         env:
           SOURCE: ${{ matrix.source }}
           PROFILE: ${{ matrix.profile }}
@@ -89,11 +91,15 @@ jobs:
               ;;
           esac
 
-      - name: Crear directorios
+      - name: Preparar directorios
         run: |
           mkdir -p dist work
 
-      - name: Construir ISO de Alpine
+      - name: Descargar imagen base de Alpine
+        run: |
+          docker pull alpine:3.24
+
+      - name: Construir ISO de ChiquiOS
         env:
           PROFILE: ${{ matrix.profile }}
           EDITION: ${{ matrix.edition }}
@@ -134,17 +140,17 @@ jobs:
                 --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
             '
 
-      - name: Verificar ISO generada
+      - name: Comprobar archivos ISO
         run: |
           set -eu
 
+          find dist -maxdepth 1 -type f -name '*.iso' -print
+
           if ! find dist -maxdepth 1 -type f -name '*.iso' \
             -print -quit | grep -q .; then
-            echo "ERROR: no se generó ninguna ISO"
+            echo "ERROR: no se generó ninguna ISO."
             exit 1
           fi
-
-          find dist -maxdepth 1 -type f -name '*.iso' -ls
 
       - name: Publicar ISO
         uses: actions/upload-artifact@v4
