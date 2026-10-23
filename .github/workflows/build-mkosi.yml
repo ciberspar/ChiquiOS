@@ -19,8 +19,9 @@ concurrency:
 
 jobs:
   build:
-    name: Build ChiquiOS ${{ matrix.edition }}
+    name: Build ChiquiOS ${{ matrix.edition }} x86
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     strategy:
       fail-fast: false
@@ -40,7 +41,7 @@ jobs:
         with:
           path: chiquios-repo
 
-      - name: Install build dependencies
+      - name: Install host dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git
@@ -88,7 +89,7 @@ jobs:
           chmod +x "aports/scripts/mkimg.$PROFILE.sh"
           chmod +x "aports/scripts/genapkovl-chiquios.sh"
 
-          echo "Profile preparado: $PROFILE"
+          echo "Perfil preparado: $PROFILE"
 
       - name: Build ISO
         env:
@@ -127,14 +128,29 @@ jobs:
 
               cd /aports/scripts
 
-              echo "Corrigiendo compatibilidad con apk moderno..."
+              echo "Aplicando compatibilidad con apk moderno..."
 
-              if grep -n -- "--no-chown" ./mkimage.sh; then
+              if grep -q -- "--no-chown" ./mkimage.sh; then
                 sed -i "s/--no-chown//g" ./mkimage.sh
               fi
 
-              if grep -n -- "--no-chown" ./mkimage.sh; then
-                echo "ERROR: sigue presente --no-chown"
+              if grep -q -- "--no-chown" ./mkimage.sh; then
+                echo "ERROR: --no-chown sigue presente"
+                exit 1
+              fi
+
+              echo "Configurando firma del modloop para desarrollo..."
+
+              if [ -f ./mkimg.base.sh ]; then
+                sed -i "s/modloop_sign=yes/modloop_sign=no/g" \
+                  ./mkimg.base.sh
+              else
+                echo "ERROR: no existe mkimg.base.sh"
+                exit 1
+              fi
+
+              if grep -n "modloop_sign=yes" ./mkimg.base.sh; then
+                echo "ERROR: no se pudo cambiar modloop_sign"
                 exit 1
               fi
 
@@ -158,12 +174,16 @@ jobs:
 
           if ! find dist -maxdepth 1 -type f -name '*.iso' -print -quit | grep -q .; then
             echo "ERROR: no se generó ningún archivo ISO."
+            echo "Archivos encontrados:"
+            find dist -maxdepth 2 -type f -print
             exit 1
           fi
 
+          echo "ISO generadas:"
           ls -lh dist/*.iso
 
       - name: Upload ISO artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: chiquios-${{ matrix.edition }}-x86
