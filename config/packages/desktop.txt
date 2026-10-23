@@ -1,0 +1,14 @@
+
+xorg
+xserver-xorg
+xinit
+lxde-core
+openbox
+lightdm
+lightdm-gtk-greeter
+lxterminal
+pcmanfm
+lxpanel
+lxappearance
+fonts-dejavu
+fonts-noto-core
