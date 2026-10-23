@@ -9,11 +9,11 @@ jobs:
 build:
 name: Build ChiquiOS (${{ matrix.edition }} - i386)
 runs-on: ubuntu-latest
-
 strategy:
-  fail-fast: false
-  matrix:
-    edition: [desktop, cli]
+fail-fast: false
+matrix:
+edition: [desktop, cli]
+
 steps:
   - name: Checkout Repository
     uses: actions/checkout@v4
@@ -74,7 +74,6 @@ steps:
         --mirror-chroot http://deb.debian.org/debian/ \
         --mirror-binary http://deb.debian.org/debian/ \
         --binary-images iso \
-        --bootloader syslinux \
         --apt-recommends true \
         --bootappend-live "boot=live components"
   - name: Build ISO
