@@ -1,140 +1,117 @@
-name: Build ChiquiOS with Debian Live
+name: Build ChiquiOS i386 with Debian Live
 
 on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+push:
+branches: [main, master]
+workflow_dispatch:
 
 jobs:
-  build:
-    name: Build ChiquiOS (${{ matrix.edition }} - ${{ matrix.arch }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, i386, arm64, ppc64el]
-        edition: [desktop, cli]
+build:
+name: Build ChiquiOS (${{ matrix.edition }} - i386)
+runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU and Binfmt
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
-
-      - name: Install Debian Live Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y live-build live-boot live-config debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin debian-archive-keyring
-
-      - name: Fix Live-Build Contents 404 Bug
-        run: |
-          # Parcheamos el script de live-build que busca los archivos Contents-*.gz obsoletos
-          sudo sed -i 's/wget.*Contents-.*//g' /usr/lib/live/build/chroot_linux-image || true
-          sudo sed -i 's/.*Contents-.*//g' /usr/lib/live/build/chroot_linux-image || true
-
-      - name: Setup Package Lists per Edition
-        run: |
-          mkdir -p config/package-lists
-          rm -f config/package-lists/*.list.chroot
-
-          KERNEL_PKG="linux-image-amd64"
-          if [ "${{ matrix.arch }}" = "i386" ]; then
-            KERNEL_PKG="linux-image-686"
-          elif [ "${{ matrix.arch }}" = "arm64" ]; then
-            KERNEL_PKG="linux-image-arm64"
-          elif [ "${{ matrix.arch }}" = "ppc64el" ]; then
-            KERNEL_PKG="linux-image-powerpc64le"
-          fi
-
-          if [ "${{ matrix.edition }}" = "cli" ]; then
-            echo "Escribiendo paquetes CLI..."
-            cat << EOF > config/package-lists/chiquios-cli.list.chroot
-          $KERNEL_PKG
-          systemd-sysv
-          live-boot
-          live-config
-          nano
-          curl
-          wget
-          git
-          python3
-          netcat-openbsd
-          nmap
-          EOF
-          else
-            echo "Escribiendo paquetes Desktop..."
-            cat << EOF > config/package-lists/chiquios-desktop.list.chroot
-          $KERNEL_PKG
-          systemd-sysv
-          live-boot
-          live-config
-          task-desktop
-          lightdm
-          plymouth
-          plymouth-themes
-          nano
-          curl
-          wget
-          git
-          python3
-          EOF
-          fi
-
-      - name: Configure Debian Live
-        run: |
-          TARGET_ARCH="${{ matrix.arch }}"
-          MIRROR_URL="http://ftp.debian.org/debian/"
-
-          BOOTLOADER="isolinux"
-          FLAVOUR="amd64"
-          if [ "$TARGET_ARCH" = "i386" ]; then
-            FLAVOUR="686"
-          elif [ "$TARGET_ARCH" = "arm64" ]; then
-            BOOTLOADER="grub-efi"
-            FLAVOUR="arm64"
-          elif [ "$TARGET_ARCH" = "ppc64el" ]; then
-            BOOTLOADER="grub-efi"
-            FLAVOUR="powerpc64le"
-          fi
-
-          BOOT_PARAMS="boot=live"
-          if [ "${{ matrix.edition }}" = "desktop" ]; then
-            BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
-          fi
-
-          lb clean --purge || true
-
-          lb config \
-            --mode debian \
-            --architectures "$TARGET_ARCH" \
-            --distribution stable \
-            --security false \
-            --updates false \
-            --backports false \
-            --linux-packages "linux-image" \
-            --linux-flavours "$FLAVOUR" \
-            --mirror-bootstrap "$MIRROR_URL" \
-            --mirror-chroot "$MIRROR_URL" \
-            --mirror-binary "$MIRROR_URL" \
-            --binary-images iso-hybrid \
-            --apt-recommends false \
-            --bootloader "$BOOTLOADER" \
-            --bootappend-live "$BOOT_PARAMS"
-
-      - name: Build ISO with Debian Live
-        run: |
-          sudo lb build
-
-      - name: Collect ISO Artifacts
-        run: |
-          mkdir -p output_isos
-          mv live-image-*.hybrid.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || cp live-image-*.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || true
-
-      - name: Upload ISO Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}
-          path: output_isos/*.iso
+strategy:
+  fail-fast: false
+  matrix:
+    arch: [i386]
+    edition: [desktop, cli]
+steps:
+  - name: Checkout Repository
+    uses: actions/checkout@v4
+  - name: Install Debian Live Tools
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y \
+        live-build \
+        debootstrap \
+        xorriso \
+        squashfs-tools \
+        syslinux \
+        syslinux-common \
+        isolinux \
+        dosfstools \
+        mtools \
+        debian-archive-keyring
+  - name: Setup Package Lists
+    shell: bash
+    run: |
+      set -euo pipefail
+      mkdir -p config/package-lists
+      rm -f config/package-lists/*.list.chroot
+      if [ "${{ matrix.edition }}" = "cli" ]; then
+        cat > config/package-lists/chiquios-cli.list.chroot <<'EOF'
+      linux-image-686
+      systemd-sysv
+      live-boot
+      live-config
+      sudo
+      nano
+      curl
+      wget
+      git
+      python3
+      iproute2
+      iputils-ping
+      netcat-openbsd
+      EOF
+      else
+        cat > config/package-lists/chiquios-desktop.list.chroot <<'EOF'
+      linux-image-686
+      systemd-sysv
+      live-boot
+      live-config
+      task-xfce-desktop
+      lightdm
+      sudo
+      nano
+      curl
+      wget
+      git
+      python3
+      EOF
+      fi
+  - name: Configure Debian Live
+    shell: bash
+    run: |
+      set -euo pipefail
+      lb clean --purge || true
+      lb config \
+        --mode debian \
+        --architectures i386 \
+        --distribution stable \
+        --archive-areas "main" \
+        --linux-packages linux-image \
+        --linux-flavours 686 \
+        --mirror-bootstrap http://deb.debian.org/debian/ \
+        --mirror-chroot http://deb.debian.org/debian/ \
+        --mirror-binary http://deb.debian.org/debian/ \
+        --binary-images iso-hybrid \
+        --bootloader syslinux \
+        --apt-recommends true \
+        --bootappend-live "boot=live components"
+  - name: Build ISO
+    shell: bash
+    run: |
+      set -euo pipefail
+      sudo lb build
+  - name: Collect ISO
+    shell: bash
+    run: |
+      set -euo pipefail
+      mkdir -p output_isos
+      ISO="$(find . -maxdepth 1 -type f \
+        -name 'live-image-*.iso' -print -quit)"
+      if [ -z "$ISO" ]; then
+        echo "ERROR: No se generó ninguna ISO."
+        exit 1
+      fi
+      cp "$ISO" \
+        "output_isos/ChiquiOS-${{ matrix.edition }}-i386.iso"
+      ls -lh output_isos/
+  - name: Upload ISO Artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: ChiquiOS-${{ matrix.edition }}-i386
+      path: output_isos/*.iso
+      if-no-files-found: error
+      retention-days: 7
