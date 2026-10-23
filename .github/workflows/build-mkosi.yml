@@ -1,101 +1,138 @@
+
 name: Build ChiquiOS
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
     paths:
-      - "chiquios/**"
+      - "mkimg.*.sh"
+      - "genapkovl-chiquios.sh"
       - ".github/workflows/build-chiquios.yml"
+
 permissions:
   contents: read
+
 jobs:
   build:
     name: Build ChiquiOS ${{ matrix.edition }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
     strategy:
       fail-fast: false
       matrix:
         include:
           - edition: cli
-            profile: chiquios-cli
+            profile: chiquios_cli
           - edition: pixel
-            profile: chiquios-pixel
+            profile: chiquios_pixel
+
     steps:
-      - name: Descargar repositorio ChiquiOS
+      - name: Descargar ChiquiOS
         uses: actions/checkout@v4
+        with:
+          path: chiquios
+
+      - name: Instalar herramientas de compilación
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            docker.io \
+            ca-certificates
+
       - name: Descargar Bacus-Pkg
         run: |
-          git clone --depth 1 \
+          git clone \
+            --depth 1 \
             https://github.com/ciberspar/Bacus-pkg.git \
-            "$RUNNER_TEMP/Bacus-pkg"
-      - name: Preparar directorio de salida
-        run: mkdir -p dist
-      - name: Construir imagen Alpine personalizada
+            Bacus-pkg
+
+      - name: Obtener aports de Alpine
+        run: |
+          git clone \
+            --depth 1 \
+            --branch 3.24-stable \
+            https://github.com/alpinelinux/aports.git \
+            aports
+
+      - name: Preparar perfiles personalizados
+        run: |
+          set -eu
+
+          cp chiquios/mkimg.chiquios-cli.sh \
+            aports/scripts/mkimg.chiquios_cli.sh
+
+          cp chiquios/mkimg.chiquios-pixel.sh \
+            aports/scripts/mkimg.chiquios_pixel.sh
+
+          cp chiquios/genapkovl-chiquios.sh \
+            aports/scripts/genapkovl-chiquios.sh
+
+          chmod +x \
+            aports/scripts/mkimg.chiquios_cli.sh \
+            aports/scripts/mkimg.chiquios_pixel.sh \
+            aports/scripts/genapkovl-chiquios.sh
+
+          grep -q '^profile_chiquios_cli()' \
+            aports/scripts/mkimg.chiquios_cli.sh
+
+          grep -q '^profile_chiquios_pixel()' \
+            aports/scripts/mkimg.chiquios_pixel.sh
+
+      - name: Construir ISO
         env:
           EDITION: ${{ matrix.edition }}
           PROFILE: ${{ matrix.profile }}
         run: |
-          set -euxo pipefail
-          docker pull alpine:3.24
+          set -eu
+
+          mkdir -p dist work
+
           docker run --rm \
-            --privileged \
-            -e CHIQUIOS_EDITION="$EDITION" \
-            -e CHIQUIOS_PROFILE="$PROFILE" \
-            -v "$GITHUB_WORKSPACE:/work" \
-            -v "$RUNNER_TEMP/Bacus-pkg:/bacuspkg:ro" \
-            alpine:3.24 sh -euxc '
+            -v "$PWD/aports:/aports" \
+            -v "$PWD/Bacus-pkg:/bacuspkg:ro" \
+            -v "$PWD/dist:/dist" \
+            -v "$PWD/work:/work" \
+            -e BACUS_SOURCE=/bacuspkg \
+            -e EDITION="$EDITION" \
+            -e PROFILE="$PROFILE" \
+            alpine:3.24 \
+            sh -ec '
               apk add --no-cache \
-                alpine-conf abuild apk-tools \
-                busybox fakeroot git \
-                syslinux xorriso squashfs-tools grub mtools
-              git clone --depth 1 \
-                --branch 3.24-stable \
-                https://github.com/alpinelinux/aports.git \
-                /tmp/aports
-              cp /work/chiquios/mkimg.chiquios-cli.sh \
-                /tmp/aports/scripts/
-              cp /work/chiquios/mkimg.chiquios-pixel.sh \
-                /tmp/aports/scripts/
-              cp /work/chiquios/genapkovl-chiquios.sh \
-                /tmp/aports/scripts/
-              chmod +x /tmp/aports/scripts/mkimg.chiquios-*.sh
-              chmod +x /tmp/aports/scripts/genapkovl-chiquios.sh
-              # Compatibilidad con APK moderno:
-              # quitar la opción antigua --no-chown.
-              sed -i \
-                "s/ add --initdb --no-chown/ add --initdb/" \
-                /tmp/aports/scripts/mkimage.sh
-              if grep -q -- "--no-chown" \
-                /tmp/aports/scripts/mkimage.sh; then
-                echo "ERROR: no se pudo aplicar el parche de APK."
-                exit 1
-              fi
-              export BACUS_SOURCE=/bacuspkg
-              export CHIQUIOS_EDITION
-              export CHIQUIOS_PROFILE
-              cd /tmp/aports/scripts
+                alpine-conf \
+                abuild \
+                apk-tools \
+                busybox \
+                fakeroot \
+                git \
+                syslinux \
+                xorriso \
+                squashfs-tools \
+                grub \
+                mtools
+
+              cd /aports/scripts
+
+              # Verificar que mkimage reconozca ambos perfiles.
+              sh ./mkimage.sh --help
+
+              # Construir solo el perfil solicitado.
               sh ./mkimage.sh \
                 --tag v3.24 \
-                --outdir /work/dist \
-                --workdir /tmp/chiquios-work \
+                --outdir /dist \
+                --workdir /work \
                 --arch x86 \
-                --profile "$CHIQUIOS_PROFILE" \
-                --repository \
-                https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
-                --repository \
-                https://dl-cdn.alpinelinux.org/alpine/v3.24/community
+                --profile "$PROFILE" \
+                --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
+                --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
             '
-      - name: Comprobar archivos generados
-        if: always()
-        run: |
-          echo "Archivos disponibles:"
-          find dist -maxdepth 2 -type f -printf '%p (%s bytes)\n' || true
-      - name: Publicar artefactos
-        if: success()
+
+      - name: Publicar ISO
         uses: actions/upload-artifact@v4
         with:
           name: chiquios-${{ matrix.edition }}-x86
-          path: dist/*
+          path: dist/*.iso
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
