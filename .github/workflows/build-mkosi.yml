@@ -1,4 +1,4 @@
-name: Build Alpine ChiquiOS
+name: Build Alpine ChiquiOS (x86 & x64)
 
 on:
   push:
@@ -10,46 +10,68 @@ permissions:
 
 jobs:
   build:
-    name: Build Alpine ISO (amd64)
+    name: Build Alpine ISO (${{ matrix.arch }} - ${{ matrix.edition }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x86_64]
+        edition: [cli, desktop]
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Alpine ISO Tools on Runner
+      - name: Install dependencies & alpine-make-iso
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            alpine-make-iso \
             xorriso \
             syslinux-common \
             isolinux \
             squashfs-tools \
             dosfstools \
             mtools \
-            genisoimage
+            genisoimage \
+            qemu-user-static \
+            binfmt-support \
+            wget \
+            apk-tools
+
+          # Descargar e instalar alpine-make-iso desde su fuente oficial
+          wget https://gitlab.alpinelinux.org/alpine/alpine-make-iso/-/raw/master/alpine-make-iso -O /tmp/alpine-make-iso
+          chmod +x /tmp/alpine-make-iso
+          sudo mv /tmp/alpine-make-iso /usr/local/bin/
 
       - name: Build Alpine Live ISO
         run: |
-          # alpine-make-iso empaqueta el sistema base usando el bootloader nativo de Alpine
+          if [ "${{ matrix.edition }}" = "desktop" ]; then
+            PACKAGES="nano curl wget htop python3 git xfce4 xfce4-terminal lightdm"
+            PROFILE="xfce"
+          else
+            PACKAGES="nano curl wget htop python3 git"
+            PROFILE="standard"
+          fi
+
           sudo alpine-make-iso \
-            --output chiquios-alpine-amd64.iso \
-            --profile standard \
-            --packages "nano curl wget htop python3 git" \
+            --output "chiquios-${{ matrix.edition }}-${{ matrix.arch }}.iso" \
+            --profile "$PROFILE" \
+            --arch "${{ matrix.arch }}" \
+            --packages "$PACKAGES" \
             --branch stable
 
       - name: Verify and Prepare Artifact
         run: |
-          test -s chiquios-alpine-amd64.iso
+          ISO_NAME="chiquios-${{ matrix.edition }}-${{ matrix.arch }}.iso"
+          test -s "$ISO_NAME"
           mkdir -p output_iso
-          mv chiquios-alpine-amd64.iso output_iso/
+          mv "$ISO_NAME" output_iso/
 
       - name: Upload Alpine ISO
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-alpine-amd64
+          name: chiquios-${{ matrix.edition }}-${{ matrix.arch }}
           path: output_iso/*.iso
           if-no-files-found: error
           retention-days: 14
