@@ -1,148 +1,112 @@
-name: Build ChiquiOS with Debian Live
+
+name: Build ChiquiOS Live
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: chiquios-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    name: Build ChiquiOS (${{ matrix.edition }} - ${{ matrix.arch }})
-    runs-on: ubuntu-latest
+  build-x86-iso:
+    name: ISO ${{ matrix.arch }} / ${{ matrix.edition }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, i386, arm64]
-        edition: [desktop, cli]
+        arch: [i386, amd64]
+        edition: [cli, desktop]
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up QEMU and Binfmt
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
-
-      - name: Install Latest Debian Live Tools
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin debian-archive-keyring wget
-          
-          # Descargar e instalar la versión actual de live-build directamente desde Debian
-          wget http://ftp.debian.org/debian/pool/main/l/live-build/live-build_20230502_all.deb || true
-          if [ -f live-build_20230502_all.deb ]; then
-            sudo dpkg -i live-build_20230502_all.deb || sudo apt-get install -f -y
-          else
-            sudo apt-get install -y live-build live-boot live-config
-          fi
+          sudo apt-get install -y \
+            debootstrap \
+            qemu-user-static \
+            binfmt-support \
+            squashfs-tools \
+            grub-common \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
+            grub-efi-ia32-bin \
+            xorriso \
+            mtools \
+            dosfstools \
+            file
 
-      - name: Patch Live-Build Mechanics
+      - name: Enable i386 emulation
         run: |
-          # Anular la descarga de índices Contents-*.gz obsoletos para evitar errores 404
-          if [ -f /usr/lib/live/build/chroot_linux-image ]; then
-            sudo sed -i 's/.*Contents-.*//g' /usr/lib/live/build/chroot_linux-image
-            sudo sed -i 's/.*wget.*Contents.*/:/g' /usr/lib/live/build/chroot_linux-image
-          fi
+          sudo update-binfmts --enable qemu-i386 || true
 
-      - name: Setup Package Lists per Edition
+      - name: Build root filesystem
         run: |
-          mkdir -p config/package-lists
-          rm -f config/package-lists/*.list.chroot
+          chmod +x scripts/*.sh
+          sudo bash scripts/build-rootfs.sh \
+            "${{ matrix.arch }}" \
+            "${{ matrix.edition }}"
 
-          KERNEL_PKG="linux-image-amd64"
-          if [ "${{ matrix.arch }}" = "i386" ]; then
-            KERNEL_PKG="linux-image-686"
-          elif [ "${{ matrix.arch }}" = "arm64" ]; then
-            KERNEL_PKG="linux-image-arm64"
-          fi
-
-          if [ "${{ matrix.edition }}" = "cli" ]; then
-            echo "Escribiendo paquetes CLI..."
-            cat << EOF > config/package-lists/chiquios-cli.list.chroot
-          $KERNEL_PKG
-          systemd-sysv
-          live-boot
-          live-config
-          nano
-          curl
-          wget
-          git
-          python3
-          netcat-openbsd
-          nmap
-          EOF
-          else
-            echo "Escribiendo paquetes Desktop..."
-            cat << EOF > config/package-lists/chiquios-desktop.list.chroot
-          $KERNEL_PKG
-          systemd-sysv
-          live-boot
-          live-config
-          task-desktop
-          lightdm
-          plymouth
-          plymouth-themes
-          nano
-          curl
-          wget
-          git
-          python3
-          EOF
-          fi
-
-      - name: Configure Debian Live
+      - name: Create bootable ISO
         run: |
-          TARGET_ARCH="${{ matrix.arch }}"
-          MIRROR_URL="http://ftp.debian.org/debian/"
+          sudo bash scripts/make-image.sh \
+            "${{ matrix.arch }}" \
+            "${{ matrix.edition }}"
 
-          # Configuración de bootloader moderno y robusto (GRUB)
-          BOOTLOADER="grub-pc"
-          FLAVOUR="amd64"
-          if [ "$TARGET_ARCH" = "i386" ]; then
-            FLAVOUR="686"
-            BOOTLOADER="grub-pc"
-          elif [ "$TARGET_ARCH" = "arm64" ]; then
-            BOOTLOADER="grub-efi"
-            FLAVOUR="arm64"
-          fi
-
-          BOOT_PARAMS="boot=live"
-          if [ "${{ matrix.edition }}" = "desktop" ]; then
-            BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
-          fi
-
-          sudo lb clean --purge || true
-
-          # IMPORTANTE: lb config con sudo para evitar errores de permisos de root
-          sudo lb config \
-            --mode debian \
-            --architectures "$TARGET_ARCH" \
-            --distribution stable \
-            --security false \
-            --updates false \
-            --backports false \
-            --linux-packages "linux-image" \
-            --linux-flavours "$FLAVOUR" \
-            --mirror-bootstrap "$MIRROR_URL" \
-            --mirror-chroot "$MIRROR_URL" \
-            --mirror-binary "$MIRROR_URL" \
-            --binary-images iso-hybrid \
-            --apt-recommends false \
-            --bootloader "$BOOTLOADER" \
-            --bootappend-live "$BOOT_PARAMS"
-
-      - name: Build ISO with Debian Live
-        run: |
-          sudo lb build
-
-      - name: Collect ISO Artifacts
-        run: |
-          mkdir -p output_isos
-          mv live-image-*.hybrid.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || cp live-image-*.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || true
-
-      - name: Upload ISO Artifact
+      - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
-          name: chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}
-          path: output_isos/*.iso
+          name: chiquiOS-${{ matrix.arch }}-${{ matrix.edition }}-iso
+          path: output/chiquiOS-${{ matrix.arch }}-${{ matrix.edition }}.iso
+          if-no-files-found: error
+          retention-days: 14
+
+  build-arm64-rootfs:
+    name: ARM64 root filesystem
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            debootstrap \
+            qemu-user-static \
+            binfmt-support \
+            tar \
+            xz-utils
+
+      - name: Enable ARM64 emulation
+        run: |
+          sudo update-binfmts --enable qemu-aarch64 || true
+
+      - name: Build ARM64 root filesystem
+        run: |
+          chmod +x scripts/*.sh
+          sudo bash scripts/build-rootfs.sh arm64 desktop
+          sudo tar -C work/arm64-desktop/rootfs \
+            -czf output-chiquiOS-arm64-desktop-rootfs.tar.gz .
+
+      - name: Upload ARM64 root filesystem
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquiOS-arm64-desktop-rootfs
+          path: output-chiquiOS-arm64-desktop-rootfs.tar.gz
+          if-no-files-found: error
+          retention-days: 14
