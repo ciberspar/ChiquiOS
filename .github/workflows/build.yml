@@ -2,7 +2,9 @@ name: Build ChiquiOS i386 with Debian Live
 
 on:
 push:
-branches: [main, master]
+branches:
+- main
+- master
 workflow_dispatch:
 
 jobs:
@@ -21,17 +23,7 @@ steps:
   - name: Install Debian Live Tools
     run: |
       sudo apt-get update
-      sudo apt-get install -y \
-        live-build \
-        debootstrap \
-        xorriso \
-        squashfs-tools \
-        syslinux \
-        syslinux-common \
-        isolinux \
-        dosfstools \
-        mtools \
-        debian-archive-keyring
+      sudo apt-get install -y live-build debootstrap xorriso squashfs-tools syslinux syslinux-common isolinux dosfstools mtools debian-archive-keyring
   - name: Setup Package Lists
     shell: bash
     run: |
@@ -52,7 +44,6 @@ steps:
       python3
       iproute2
       iputils-ping
-      netcat-openbsd
       EOF
       else
         cat > config/package-lists/chiquios-desktop.list.chroot <<'EOF'
@@ -90,24 +81,20 @@ steps:
         --apt-recommends true \
         --bootappend-live "boot=live components"
   - name: Build ISO
-    shell: bash
-    run: |
-      set -euo pipefail
-      sudo lb build
+    run: sudo lb build
   - name: Collect ISO
     shell: bash
     run: |
       set -euo pipefail
       mkdir -p output_isos
-      ISO="$(find . -maxdepth 1 -type f \
-        -name 'live-image-*.iso' -print -quit)"
-      if [ -z "$ISO" ]; then
+      shopt -s nullglob
+      isos=(live-image-*.iso)
+      if [ "${#isos[@]}" -eq 0 ]; then
         echo "ERROR: No se generó ninguna ISO."
         exit 1
       fi
-      cp "$ISO" \
+      cp "${isos[0]}" \
         "output_isos/ChiquiOS-${{ matrix.edition }}-i386.iso"
-      ls -lh output_isos/
   - name: Upload ISO Artifact
     uses: actions/upload-artifact@v4
     with:
