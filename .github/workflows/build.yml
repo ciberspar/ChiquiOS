@@ -39,7 +39,7 @@ jobs:
 
       - name: Patch Live-Build Mechanics
         run: |
-          # Anular la descarga de índices Contents-*.gz obsoletos
+          # Anular la descarga de índices Contents-*.gz obsoletos para evitar errores 404
           if [ -f /usr/lib/live/build/chroot_linux-image ]; then
             sudo sed -i 's/.*Contents-.*//g' /usr/lib/live/build/chroot_linux-image
             sudo sed -i 's/.*wget.*Contents.*/:/g' /usr/lib/live/build/chroot_linux-image
@@ -96,10 +96,12 @@ jobs:
           TARGET_ARCH="${{ matrix.arch }}"
           MIRROR_URL="http://ftp.debian.org/debian/"
 
-          BOOTLOADER="isolinux"
+          # Configuración de bootloader moderno y robusto (GRUB)
+          BOOTLOADER="grub-pc"
           FLAVOUR="amd64"
           if [ "$TARGET_ARCH" = "i386" ]; then
             FLAVOUR="686"
+            BOOTLOADER="grub-pc"
           elif [ "$TARGET_ARCH" = "arm64" ]; then
             BOOTLOADER="grub-efi"
             FLAVOUR="arm64"
@@ -110,9 +112,10 @@ jobs:
             BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
           fi
 
-          lb clean --purge || true
+          sudo lb clean --purge || true
 
-          lb config \
+          # IMPORTANTE: lb config con sudo para evitar errores de permisos de root
+          sudo lb config \
             --mode debian \
             --architectures "$TARGET_ARCH" \
             --distribution stable \
