@@ -29,12 +29,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y live-build live-boot live-config debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin debian-archive-keyring
 
+      - name: Fix Live-Build Contents 404 Bug
+        run: |
+          # Parcheamos el script de live-build que busca los archivos Contents-*.gz obsoletos
+          sudo sed -i 's/wget.*Contents-.*//g' /usr/lib/live/build/chroot_linux-image || true
+          sudo sed -i 's/.*Contents-.*//g' /usr/lib/live/build/chroot_linux-image || true
+
       - name: Setup Package Lists per Edition
         run: |
           mkdir -p config/package-lists
           rm -f config/package-lists/*.list.chroot
 
-          # Seleccionar sabor de kernel según arquitectura
           KERNEL_PKG="linux-image-amd64"
           if [ "${{ matrix.arch }}" = "i386" ]; then
             KERNEL_PKG="linux-image-686"
@@ -45,7 +50,7 @@ jobs:
           fi
 
           if [ "${{ matrix.edition }}" = "cli" ]; then
-            echo "Escribiendo paquetes para la versión CLI..."
+            echo "Escribiendo paquetes CLI..."
             cat << EOF > config/package-lists/chiquios-cli.list.chroot
           $KERNEL_PKG
           systemd-sysv
@@ -60,7 +65,7 @@ jobs:
           nmap
           EOF
           else
-            echo "Escribiendo paquetes para la versión Desktop (con Plymouth y entorno)..."
+            echo "Escribiendo paquetes Desktop..."
             cat << EOF > config/package-lists/chiquios-desktop.list.chroot
           $KERNEL_PKG
           systemd-sysv
@@ -107,13 +112,13 @@ jobs:
             --architectures "$TARGET_ARCH" \
             --distribution stable \
             --security false \
+            --updates false \
+            --backports false \
             --linux-packages "linux-image" \
             --linux-flavours "$FLAVOUR" \
             --mirror-bootstrap "$MIRROR_URL" \
             --mirror-chroot "$MIRROR_URL" \
             --mirror-binary "$MIRROR_URL" \
-            --parent-mirror-bootstrap "$MIRROR_URL" \
-            --parent-mirror-chroot "$MIRROR_URL" \
             --binary-images iso-hybrid \
             --apt-recommends false \
             --bootloader "$BOOTLOADER" \
