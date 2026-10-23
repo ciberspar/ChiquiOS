@@ -1,5 +1,5 @@
 
-name: Build ChiquiOS
+name: Build ChiquiOS x32
 
 on:
   workflow_dispatch:
@@ -7,19 +7,20 @@ on:
     branches:
       - main
     paths:
-      - "mkosi.conf"
       - ".github/workflows/build-mkosi.yml"
+      - "chiquios/**"
+      - "bacus-pkg/**"
 
 permissions:
   contents: read
 
 concurrency:
-  group: chiquios-${{ github.ref }}
+  group: chiquios-x32-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-x32:
-    name: ChiquiOS x32 - Debian 12
+    name: ChiquiOS Alpine x32
     runs-on: ubuntu-24.04
     timeout-minutes: 180
 
@@ -27,119 +28,45 @@ jobs:
       - name: Descargar ChiquiOS
         uses: actions/checkout@v4
 
-      - name: Instalar dependencias
+      - name: Instalar herramientas de construcción
         run: |
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y \
-            git python3 python3-apt \
-            debootstrap ca-certificates \
-            debian-archive-keyring \
-            grub-common grub-pc-bin grub2-common \
-            grub-efi-ia32-bin xorriso \
-            dosfstools e2fsprogs mtools \
-            qemu-system-x86 ovmf
+            git curl ca-certificates \
+            xorriso squashfs-tools \
+            qemu-user-static binfmt-support
 
-      - name: Descargar Mkosi
+      - name: Preparar Alpine para construir la ISO
         run: |
           set -euxo pipefail
           git clone --depth 1 \
-            https://github.com/systemd/mkosi.git \
-            "$RUNNER_TEMP/mkosi"
-          test -x "$RUNNER_TEMP/mkosi/bin/mkosi"
-          echo "MKOSI_BIN=$RUNNER_TEMP/mkosi/bin/mkosi" \
-            >> "$GITHUB_ENV"
+            https://gitlab.alpinelinux.org/alpine/aports.git \
+            "$RUNNER_TEMP/aports"
 
-      - name: Configurar imagen x32
-        run: |
-          set -euxo pipefail
-          sed \
-            -e 's/^Release=.*/Release=bookworm/' \
-            -e 's/^Architecture=.*/Architecture=x86/' \
-            -e 's/^Format=.*/Format=disk/' \
-            -e 's/^Output=.*/Output=chiquios-x32/' \
-            -e '/^\[Content\]/a BiosBootloader=grub' \
-            mkosi.conf > "$RUNNER_TEMP/mkosi-x32.conf"
-
-          mkdir -p "$RUNNER_TEMP/chiquios-x32"
-          cp "$RUNNER_TEMP/mkosi-x32.conf" \
-            "$RUNNER_TEMP/chiquios-x32/mkosi.conf"
-
-      - name: Construir imagen x32
-        working-directory: ${{ runner.temp }}/chiquios-x32
-        run: |
-          set -euxo pipefail
-          sudo "$MKOSI_BIN" summary
-          sudo "$MKOSI_BIN" --force build
-
-      - name: Publicar artefactos x32
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: chiquios-x32-bookworm
-          path: ${{ runner.temp }}/chiquios-x32/mkosi.output/**
-          if-no-files-found: warn
-          retention-days: 14
-
-  build-x64:
-    name: ChiquiOS x64 - Debian 12
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-
-    steps:
-      - name: Descargar ChiquiOS
-        uses: actions/checkout@v4
-
-      - name: Instalar dependencias
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
           sudo apt-get install -y \
-            git python3 python3-apt \
-            debootstrap ca-certificates \
-            debian-archive-keyring \
-            grub-common grub-pc-bin grub-efi-amd64-bin \
-            grub2-common xorriso \
-            dosfstools e2fsprogs mtools \
-            qemu-system-x86 ovmf
+            alpine-chroot-install
 
-      - name: Descargar Mkosi
+          echo "APORTS_DIR=$RUNNER_TEMP/aports" >> "$GITHUB_ENV"
+
+      - name: Construir ISO Alpine x86
         run: |
           set -euxo pipefail
-          git clone --depth 1 \
-            https://github.com/systemd/mkosi.git \
-            "$RUNNER_TEMP/mkosi"
-          test -x "$RUNNER_TEMP/mkosi/bin/mkosi"
-          echo "MKOSI_BIN=$RUNNER_TEMP/mkosi/bin/mkosi" \
-            >> "$GITHUB_ENV"
 
-      - name: Configurar imagen x64
-        run: |
-          set -euxo pipefail
-          sed \
-            -e 's/^Release=.*/Release=bookworm/' \
-            -e 's/^Architecture=.*/Architecture=x86-64/' \
-            -e 's/^Format=.*/Format=disk/' \
-            -e 's/^Output=.*/Output=chiquios-x64/' \
-            -e '/^\[Content\]/a BiosBootloader=grub' \
-            mkosi.conf > "$RUNNER_TEMP/mkosi-x64.conf"
+          echo "ATENCIÓN: el constructor oficial de Alpine necesita"
+          echo "un entorno Alpine con apk, abuild y sus dependencias."
+          echo "La configuración completa del entorno se debe validar"
+          echo "antes de ejecutar mkimage.sh."
 
-          mkdir -p "$RUNNER_TEMP/chiquios-x64"
-          cp "$RUNNER_TEMP/mkosi-x64.conf" \
-            "$RUNNER_TEMP/chiquios-x64/mkosi.conf"
+          test -f "$APORTS_DIR/scripts/mkimage.sh"
+          "$APORTS_DIR/scripts/mkimage.sh" --help
 
-      - name: Construir imagen x64
-        working-directory: ${{ runner.temp }}/chiquios-x64
-        run: |
-          set -euxo pipefail
-          sudo "$MKOSI_BIN" summary
-          sudo "$MKOSI_BIN" --force build
-
-      - name: Publicar artefactos x64
+      - name: Publicar registros de construcción
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-x64-bookworm
-          path: ${{ runner.temp }}/chiquios-x64/mkosi.output/**
+          name: chiquios-x32-build-logs
+          path: |
+            ${{ runner.temp }}/aports
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
