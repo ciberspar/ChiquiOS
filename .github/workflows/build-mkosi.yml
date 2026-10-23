@@ -7,6 +7,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/build-mkosi.yml"
+      - "chiquios/**"
+      - "README.md"
 
 permissions:
   contents: read
@@ -16,44 +18,97 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-x32:
-    name: Alpine Stable x86
+  build:
+    name: Build ${{ matrix.edition }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: cli
+            profile: chiquios-cli
+          - edition: pixel
+            profile: chiquios-pixel
 
     steps:
-      - name: Instalar herramientas
+      - name: Descargar ChiquiOS
+        uses: actions/checkout@v4
+
+      - name: Descargar Bacus-Pkg oficial
         run: |
           set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y curl ca-certificates
+          git clone --depth 1 \
+            https://github.com/ciberspar/Bacus-pkg.git \
+            "$RUNNER_TEMP/Bacus-pkg"
+          test -f "$RUNNER_TEMP/Bacus-pkg/bin/bacusp"
 
-      - name: Descargar ISO oficial de Alpine
+      - name: Preparar directorios
         run: |
-          set -euxo pipefail
-
-          BASE="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86"
-          ISO="alpine-standard-3.24.3-x86.iso"
-
           mkdir -p dist
-          curl -fL --retry 3 \
-            "$BASE/$ISO" \
-            -o "dist/$ISO"
+          chmod -R a+rX chiquios
 
-          curl -fL --retry 3 \
-            "$BASE/$ISO.sha256" \
-            -o "dist/$ISO.sha256"
-
-      - name: Verificar SHA-256
+      - name: Construir ISO Alpine x86
+        env:
+          EDITION: ${{ matrix.edition }}
+          PROFILE: ${{ matrix.profile }}
         run: |
           set -euxo pipefail
-          cd dist
-          sha256sum -c alpine-standard-3.24.3-x86.iso.sha256
 
-      - name: Publicar ISO original verificada
+          docker pull alpine:3.24
+
+          docker run --rm \
+            --privileged \
+            -e CHIQUIOS_EDITION="$EDITION" \
+            -e CHIQUIOS_PROFILE="$PROFILE" \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -v "$RUNNER_TEMP/Bacus-pkg:/bacuspkg:ro" \
+            alpine:3.24 sh -euxc '
+              apk add --no-cache \
+                alpine-conf abuild apk-tools \
+                busybox fakeroot git \
+                syslinux xorriso squashfs-tools grub mtools
+
+              cd /work
+
+              git clone --depth 1 \
+                --branch 3.24-stable \
+                https://github.com/alpinelinux/aports.git \
+                /tmp/aports
+
+              cp chiquios/mkimg.chiquios-cli.sh \
+                /tmp/aports/scripts/
+              cp chiquios/mkimg.chiquios-pixel.sh \
+                /tmp/aports/scripts/
+              cp chiquios/genapkovl-chiquios.sh \
+                /tmp/aports/scripts/
+
+              chmod +x /tmp/aports/scripts/mkimg.chiquios-*.sh
+              chmod +x /tmp/aports/scripts/genapkovl-chiquios.sh
+
+              export BACUS_SOURCE=/bacuspkg
+              export CHIQUIOS_EDITION
+              export CHIQUIOS_PROFILE
+
+              cd /tmp/aports/scripts
+
+              sh ./mkimage.sh \
+                --tag v3.24 \
+                --outdir /work/dist \
+                --workdir /tmp/chiquios-work \
+                --arch x86 \
+                --profile "$CHIQUIOS_PROFILE" \
+                --repository \
+                https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
+                --repository \
+                https://dl-cdn.alpinelinux.org/alpine/v3.24/community
+            '
+
+      - name: Publicar ISO
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-x32-base-alpine-3.24.3
-          path: dist/
+          name: chiquios-x32-${{ matrix.edition }}
+          path: dist/*.iso
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
