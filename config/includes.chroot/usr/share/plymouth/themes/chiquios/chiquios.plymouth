@@ -1,8 +1,0 @@
-[Plymouth Theme]
-Name=ChiquiOS Minimal
-Description=Tema de arranque personalizado para ChiquiOS con logs y rueda
-ModuleName=script
-
-[script]
-ImageDir=/usr/share/plymouth/themes/chiquios
-ScriptFile=/usr/share/plymouth/themes/chiquios/chiquios.script
