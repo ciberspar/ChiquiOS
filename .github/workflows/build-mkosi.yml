@@ -7,8 +7,7 @@ on:
     branches:
       - main
     paths:
-      - "mkimg.*.sh"
-      - "genapkovl-chiquios.sh"
+      - "chiquios/**"
       - ".github/workflows/build-chiquios.yml"
 
 permissions:
@@ -25,81 +24,91 @@ jobs:
         include:
           - edition: cli
             profile: chiquios_cli
-          - edition: pixel
-            profile: chiquios_pixel
+            source: mkimg_chiquios-cli.sh
+
+          - edition: desktop
+            profile: chiquios_desktop
+            source: mkimg_chiquios-desktop.sh
 
     steps:
       - name: Descargar ChiquiOS
         uses: actions/checkout@v4
         with:
-          path: chiquios
+          path: chiquios-repo
 
-      - name: Instalar herramientas de compilación
+      - name: Instalar herramientas
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git \
-            docker.io \
-            ca-certificates
+          sudo apt-get install -y git docker.io
 
       - name: Descargar Bacus-Pkg
         run: |
-          git clone \
-            --depth 1 \
+          git clone --depth 1 \
             https://github.com/ciberspar/Bacus-pkg.git \
-            Bacus-pkg
+            bacus-pkg
 
-      - name: Obtener aports de Alpine
+      - name: Descargar aports
         run: |
-          git clone \
-            --depth 1 \
+          git clone --depth 1 \
             --branch 3.24-stable \
             https://github.com/alpinelinux/aports.git \
             aports
 
-      - name: Preparar perfiles personalizados
-        run: |
-          set -eu
-
-          cp chiquios/mkimg.chiquios-cli.sh \
-            aports/scripts/mkimg.chiquios_cli.sh
-
-          cp chiquios/mkimg.chiquios-pixel.sh \
-            aports/scripts/mkimg.chiquios_pixel.sh
-
-          cp chiquios/genapkovl-chiquios.sh \
-            aports/scripts/genapkovl-chiquios.sh
-
-          chmod +x \
-            aports/scripts/mkimg.chiquios_cli.sh \
-            aports/scripts/mkimg.chiquios_pixel.sh \
-            aports/scripts/genapkovl-chiquios.sh
-
-          grep -q '^profile_chiquios_cli()' \
-            aports/scripts/mkimg.chiquios_cli.sh
-
-          grep -q '^profile_chiquios_pixel()' \
-            aports/scripts/mkimg.chiquios_pixel.sh
-
-      - name: Construir ISO
+      - name: Preparar perfiles
         env:
-          EDITION: ${{ matrix.edition }}
+          SOURCE: ${{ matrix.source }}
           PROFILE: ${{ matrix.profile }}
         run: |
           set -eu
 
+          test -f "chiquios-repo/chiquios/$SOURCE"
+          test -f "chiquios-repo/chiquios/genapkovl-chiquios.sh"
+
+          cp "chiquios-repo/chiquios/$SOURCE" \
+            "aports/scripts/mkimg.$PROFILE.sh"
+
+          cp chiquios-repo/chiquios/genapkovl-chiquios.sh \
+            aports/scripts/genapkovl-chiquios.sh
+
+          chmod +x \
+            "aports/scripts/mkimg.$PROFILE.sh" \
+            aports/scripts/genapkovl-chiquios.sh
+
+          case "$PROFILE" in
+            chiquios_cli)
+              grep -q '^profile_chiquios_cli()' \
+                "aports/scripts/mkimg.$PROFILE.sh"
+              ;;
+            chiquios_desktop)
+              grep -q '^profile_chiquios_desktop()' \
+                "aports/scripts/mkimg.$PROFILE.sh"
+              ;;
+            *)
+              echo "Perfil desconocido: $PROFILE"
+              exit 1
+              ;;
+          esac
+
+      - name: Crear directorios
+        run: |
           mkdir -p dist work
+
+      - name: Construir ISO de Alpine
+        env:
+          PROFILE: ${{ matrix.profile }}
+          EDITION: ${{ matrix.edition }}
+        run: |
+          set -eu
 
           docker run --rm \
             -v "$PWD/aports:/aports" \
-            -v "$PWD/Bacus-pkg:/bacuspkg:ro" \
+            -v "$PWD/bacus-pkg:/bacuspkg:ro" \
             -v "$PWD/dist:/dist" \
             -v "$PWD/work:/work" \
             -e BACUS_SOURCE=/bacuspkg \
-            -e EDITION="$EDITION" \
             -e PROFILE="$PROFILE" \
-            alpine:3.24 \
-            sh -ec '
+            -e EDITION="$EDITION" \
+            alpine:3.24 sh -ec '
               apk add --no-cache \
                 alpine-conf \
                 abuild \
@@ -115,10 +124,6 @@ jobs:
 
               cd /aports/scripts
 
-              # Verificar que mkimage reconozca ambos perfiles.
-              sh ./mkimage.sh --help
-
-              # Construir solo el perfil solicitado.
               sh ./mkimage.sh \
                 --tag v3.24 \
                 --outdir /dist \
@@ -128,6 +133,18 @@ jobs:
                 --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
                 --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
             '
+
+      - name: Verificar ISO generada
+        run: |
+          set -eu
+
+          if ! find dist -maxdepth 1 -type f -name '*.iso' \
+            -print -quit | grep -q .; then
+            echo "ERROR: no se generó ninguna ISO"
+            exit 1
+          fi
+
+          find dist -maxdepth 1 -type f -name '*.iso' -ls
 
       - name: Publicar ISO
         uses: actions/upload-artifact@v4
