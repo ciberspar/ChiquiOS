@@ -2,9 +2,7 @@ name: Build ChiquiOS i386 with Debian Live
 
 on:
 push:
-branches:
-- main
-- master
+branches: [main, master]
 workflow_dispatch:
 
 jobs:
@@ -15,7 +13,6 @@ runs-on: ubuntu-latest
 strategy:
   fail-fast: false
   matrix:
-    arch: [i386]
     edition: [desktop, cli]
 steps:
   - name: Checkout Repository
@@ -70,13 +67,13 @@ steps:
         --mode debian \
         --architectures i386 \
         --distribution stable \
-        --archive-areas "main" \
+        --archive-areas main \
         --linux-packages linux-image \
         --linux-flavours 686 \
         --mirror-bootstrap http://deb.debian.org/debian/ \
         --mirror-chroot http://deb.debian.org/debian/ \
         --mirror-binary http://deb.debian.org/debian/ \
-        --binary-images iso-hybrid \
+        --binary-images iso \
         --bootloader syslinux \
         --apt-recommends true \
         --bootappend-live "boot=live components"
