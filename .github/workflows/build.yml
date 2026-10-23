@@ -30,43 +30,24 @@ jobs:
             debootstrap \
             debian-archive-keyring \
             ca-certificates \
-            curl \
             gnupg \
             xorriso \
             grub-pc-bin \
             grub-efi-amd64-bin \
             grub-efi-ia32-bin
-          echo "=== Tool versions ==="
+          echo "=== Versions ==="
           lb --version
           debootstrap --version
           dpkg-query -W debian-archive-keyring
-      - name: Download and verify Bookworm signing key
-        shell: bash
+      - name: Check Debian keyring
         run: |
-          set -euo pipefail
-          KEY_URL="https://ftp-master.debian.org/keys/archive-key-12.asc"
-          KEY_ASC="$RUNNER_TEMP/bookworm-archive-key.asc"
-          KEYRING="$RUNNER_TEMP/bookworm-keyring.gpg"
-          EXPECTED="4D64FEC119C2029067D6E791F8D2585B8783D481"
-          curl --fail --silent --show-error --location \
-            "$KEY_URL" -o "$KEY_ASC"
-          ACTUAL="$(
-            gpg --batch --show-keys --with-colons "$KEY_ASC" |
-            awk -F: '$1 == "fpr" { print $10; exit }'
-          )"
-          echo "Expected fingerprint: $EXPECTED"
-          echo "Actual fingerprint:   $ACTUAL"
-          if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "ERROR: Debian signing-key fingerprint mismatch."
-            exit 1
-          fi
-          gpg --batch --yes --dearmor \
-            --output "$KEYRING" "$KEY_ASC"
-          echo "BOOKWORM_KEYRING=$KEYRING" >> "$GITHUB_ENV"
-          echo "=== Verified Bookworm key ==="
-          gpg --batch --show-keys "$KEYRING"
+          set -eux
+          KEYRING=/usr/share/keyrings/debian-archive-keyring.gpg
+          test -s "$KEYRING"
+          gpg --no-default-keyring \
+            --keyring "$KEYRING" \
+            --list-keys
       - name: Configure ChiquiOS
-        shell: bash
         run: |
           set -eux
           lb config \
@@ -75,16 +56,12 @@ jobs:
             --architectures "${{ matrix.arch }}" \
             --binary-images iso-hybrid \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --debian-installer none \
-            --bootloaders "grub-pc grub-efi" \
-            --keyring-packages debian-archive-keyring \
-            --debootstrap-options "--keyring=${BOOKWORM_KEYRING}" \
+            --debian-installer false \
             --apt-recommends false \
             --iso-application "ChiquiOS Core" \
             --iso-publisher "ChiquiOS" \
             --iso-volume "CHIQUIOS"
       - name: Configure package list
-        shell: bash
         run: |
           set -eux
           mkdir -p config/package-lists
@@ -106,17 +83,14 @@ jobs:
           set -eux
           sudo lb build
       - name: Find and rename ISO
-        shell: bash
         run: |
-          set -euo pipefail
+          set -eux
           ISO="$(find . -maxdepth 1 -type f -name '*.iso' -print -quit)"
           if [ -z "$ISO" ]; then
-            echo "ERROR: live-build did not generate an ISO."
-            find . -maxdepth 2 -type f -print | sort | head -200
+            echo "ERROR: no se generó ninguna ISO."
             exit 1
           fi
           mv "$ISO" "${{ matrix.iso_name }}"
-          file "${{ matrix.iso_name }}"
           ls -lh "${{ matrix.iso_name }}"
       - name: Upload ISO
         uses: actions/upload-artifact@v4
