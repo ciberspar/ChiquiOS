@@ -13,10 +13,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: chiquios-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: ChiquiOS ${{ matrix.edition }} x86
-    runs-on: ubuntu-22.04
+    name: Build ChiquiOS ${{ matrix.edition }}
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
@@ -31,90 +35,80 @@ jobs:
             source: mkimg_chiquios-desktop.sh
 
     steps:
-      - name: Descargar ChiquiOS
+      - name: Checkout ChiquiOS
         uses: actions/checkout@v4
         with:
           path: chiquios-repo
 
-      - name: Comprobar herramientas del runner
+      - name: Install build dependencies
         run: |
-          set -eu
-          git --version
+          sudo apt-get update
+          sudo apt-get install -y git
+
+      - name: Check Docker
+        run: |
           docker --version
           docker info
 
-      - name: Descargar Bacus-Pkg
+      - name: Clone Alpine aports
         run: |
-          git clone --depth 1 \
-            https://github.com/ciberspar/Bacus-pkg.git \
-            bacus-pkg
-
-      - name: Descargar herramientas de Alpine
-        run: |
-          git clone --depth 1 \
+          git clone \
+            --depth 1 \
             --branch 3.24-stable \
             https://github.com/alpinelinux/aports.git \
             aports
 
-      - name: Instalar perfiles de ChiquiOS
+      - name: Clone Bacus-Pkg
+        run: |
+          git clone \
+            --depth 1 \
+            https://github.com/ciberspar/Bacus-pkg.git \
+            bacus-pkg
+
+          test -d bacus-pkg
+
+      - name: Prepare ChiquiOS profiles
         env:
-          SOURCE: ${{ matrix.source }}
           PROFILE: ${{ matrix.profile }}
+          PROFILE_SOURCE: ${{ matrix.source }}
         run: |
           set -eu
 
-          test -f "chiquios-repo/chiquios/$SOURCE"
+          test -f "chiquios-repo/chiquios/$PROFILE_SOURCE"
           test -f "chiquios-repo/chiquios/genapkovl-chiquios.sh"
 
-          cp "chiquios-repo/chiquios/$SOURCE" \
+          cp \
+            "chiquios-repo/chiquios/$PROFILE_SOURCE" \
             "aports/scripts/mkimg.$PROFILE.sh"
 
-          cp chiquios-repo/chiquios/genapkovl-chiquios.sh \
-            aports/scripts/genapkovl-chiquios.sh
+          cp \
+            "chiquios-repo/chiquios/genapkovl-chiquios.sh" \
+            "aports/scripts/genapkovl-chiquios.sh"
 
-          chmod +x \
-            "aports/scripts/mkimg.$PROFILE.sh" \
-            aports/scripts/genapkovl-chiquios.sh
+          chmod +x "aports/scripts/mkimg.$PROFILE.sh"
+          chmod +x "aports/scripts/genapkovl-chiquios.sh"
 
-          case "$PROFILE" in
-            chiquios_cli)
-              grep -q '^profile_chiquios_cli()' \
-                "aports/scripts/mkimg.$PROFILE.sh"
-              ;;
-            chiquios_desktop)
-              grep -q '^profile_chiquios_desktop()' \
-                "aports/scripts/mkimg.$PROFILE.sh"
-              ;;
-            *)
-              echo "Perfil desconocido: $PROFILE"
-              exit 1
-              ;;
-          esac
+          echo "Profile preparado: $PROFILE"
 
-      - name: Preparar directorios
-        run: |
-          mkdir -p dist work
-
-      - name: Descargar imagen base de Alpine
-        run: |
-          docker pull alpine:3.24
-
-      - name: Construir ISO de ChiquiOS
+      - name: Build ISO
         env:
           PROFILE: ${{ matrix.profile }}
           EDITION: ${{ matrix.edition }}
         run: |
           set -eu
 
+          mkdir -p dist work
+
           docker run --rm \
-            -v "$PWD/aports:/aports" \
-            -v "$PWD/bacus-pkg:/bacuspkg:ro" \
-            -v "$PWD/dist:/dist" \
-            -v "$PWD/work:/work" \
-            -e BACUS_SOURCE=/bacuspkg \
+            --privileged \
             -e PROFILE="$PROFILE" \
             -e EDITION="$EDITION" \
-            alpine:3.24 sh -ec '
+            -v "$PWD/aports:/aports" \
+            -v "$PWD/bacus-pkg:/bacus-pkg:ro" \
+            -v "$PWD/dist:/dist" \
+            -v "$PWD/work:/work" \
+            alpine:3.24 \
+            sh -euxc '
               apk add --no-cache \
                 alpine-conf \
                 abuild \
@@ -126,9 +120,25 @@ jobs:
                 xorriso \
                 squashfs-tools \
                 grub \
-                mtools
+                mtools \
+                sudo \
+                coreutils \
+                bash
 
               cd /aports/scripts
+
+              echo "Corrigiendo compatibilidad con apk moderno..."
+
+              if grep -n -- "--no-chown" ./mkimage.sh; then
+                sed -i "s/--no-chown//g" ./mkimage.sh
+              fi
+
+              if grep -n -- "--no-chown" ./mkimage.sh; then
+                echo "ERROR: sigue presente --no-chown"
+                exit 1
+              fi
+
+              echo "Construyendo ChiquiOS: $EDITION"
 
               sh ./mkimage.sh \
                 --tag v3.24 \
@@ -138,24 +148,25 @@ jobs:
                 --profile "$PROFILE" \
                 --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
                 --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
+
+              echo "Build finalizado."
             '
 
-      - name: Comprobar archivos ISO
+      - name: Verify generated ISO
         run: |
           set -eu
 
-          find dist -maxdepth 1 -type f -name '*.iso' -print
-
-          if ! find dist -maxdepth 1 -type f -name '*.iso' \
-            -print -quit | grep -q .; then
-            echo "ERROR: no se generó ninguna ISO."
+          if ! find dist -maxdepth 1 -type f -name '*.iso' -print -quit | grep -q .; then
+            echo "ERROR: no se generó ningún archivo ISO."
             exit 1
           fi
 
-      - name: Publicar ISO
+          ls -lh dist/*.iso
+
+      - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: chiquios-${{ matrix.edition }}-x86
           path: dist/*.iso
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
