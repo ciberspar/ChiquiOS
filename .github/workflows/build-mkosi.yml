@@ -1,80 +1,156 @@
 
-name: Build ChiquiOS with mkosi
+name: Build ChiquiOS with Mkosi
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
     paths:
-      - 'mkosi.conf'
-      - 'mkosi.*.conf'
-      - '.github/workflows/build-mkosi.yml'
+      - "mkosi.conf"
+      - "mkosi.*"
+      - "config/**"
+      - "scripts/**"
+      - "packages/**"
+      - "modules/**"
+      - "bin/**"
+      - ".github/workflows/build-mkosi.yml"
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 8 * * 0"
 
 permissions:
   contents: read
 
+concurrency:
+  group: chiquios-mkosi-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    name: Build ChiquiOS (Debian 13)
     runs-on: ubuntu-24.04
     timeout-minutes: 180
 
     steps:
-      - name: Checkout
+      - name: Checkout ChiquiOS
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Install build dependencies
+      - name: Show build environment
+        shell: bash
         run: |
+          set -euxo pipefail
+          uname -a
+          df -h
+          id
+
+      - name: Install Mkosi dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+
           sudo apt-get update
+
           sudo apt-get install -y \
+            git \
             python3 \
-            python3-pip \
-            pipx \
-            debootstrap \
+            python3-venv \
+            python3-apt \
             systemd-container \
-            systemd-boot \
-            qemu-utils \
-            dosfstools \
-            mtools \
-            xorriso \
-            gdisk \
-            squashfs-tools \
+            debootstrap \
+            apt \
             debian-archive-keyring \
             ca-certificates \
             curl \
-            git \
-            make \
-            gcc \
-            pkg-config \
-            libacl1-dev \
-            libcap-dev \
-            liblzma-dev \
-            libzstd-dev \
-            libssl-dev
+            xz-utils \
+            dosfstools \
+            e2fsprogs \
+            mtools \
+            parted \
+            qemu-utils \
+            grub-common \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
+            grub2-common \
+            xorriso \
+            squashfs-tools \
+            rsync \
+            util-linux \
+            dbus \
+            gnupg
 
-      - name: Install current mkosi
+      - name: Get Mkosi from official repository
+        shell: bash
         run: |
-          pipx install 'mkosi'
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/mkosi" --version
+          set -euxo pipefail
 
-      - name: Validate configuration
+          git clone --depth 1 \
+            https://github.com/systemd/mkosi.git \
+            "$RUNNER_TEMP/mkosi"
+
+          echo "$RUNNER_TEMP/mkosi/bin" >> "$GITHUB_PATH"
+
+          "$RUNNER_TEMP/mkosi/bin/mkosi" --version
+
+      - name: Verify ChiquiOS configuration
+        shell: bash
         run: |
-          "$HOME/.local/bin/mkosi" summary
+          set -euxo pipefail
 
-      - name: Build disk image
+          if [ ! -f mkosi.conf ]; then
+            echo "::error::mkosi.conf not found in repository root"
+            exit 1
+          fi
+
+          mkosi summary
+
+      - name: Build ChiquiOS image
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo "$HOME/.local/bin/mkosi" build
+          set -euxo pipefail
 
-      - name: List generated files
+          sudo -E mkosi --force --debug build
+
+      - name: List build artifacts
         if: always()
+        shell: bash
         run: |
-          find mkosi.output -maxdepth 2 -type f -printf '%p %s bytes\n' || true
+          set -u
 
-      - name: Upload build output
+          echo "Repository files:"
+          find . -maxdepth 3 -type f \
+            \( -name '*.iso' \
+            -o -name '*.raw' \
+            -o -name '*.img' \
+            -o -name '*.qcow2' \) \
+            -print || true
+
+          echo "Mkosi output:"
+          if [ -d mkosi.output ]; then
+            find mkosi.output -maxdepth 3 -type f -print
+          fi
+
+          echo "Disk space:"
+          df -h
+
+      - name: Upload ChiquiOS artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-mkosi-x64
-          path: mkosi.output/
+          name: chiquios-debian13-${{ github.sha }}
+          path: |
+            mkosi.output/**/*.iso
+            mkosi.output/**/*.raw
+            mkosi.output/**/*.img
+            mkosi.output/**/*.qcow2
+            mkosi.output/**/*.manifest
+            mkosi.output/**/*.SHA256SUMS
           if-no-files-found: error
+          compression-level: 1
           retention-days: 14
