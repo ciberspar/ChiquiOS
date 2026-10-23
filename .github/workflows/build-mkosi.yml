@@ -1,28 +1,3 @@
-name: Build Alpine ChiquiOS (x86 & x64)
-
-on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    name: Build Alpine ISO (${{ matrix.arch }} - ${{ matrix.edition }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86, x86_64]
-        edition: [cli, desktop]
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Build Alpine ISO using Docker
         run: |
           # Configurar paquetes según la edición
@@ -34,14 +9,16 @@ jobs:
             PROFILE="standard"
           fi
 
-          # Ejecutar alpine-make-iso dentro de un contenedor nativo de Alpine
+          # Ejecutar dentro de Alpine usando el script descargado y syslinux
           sudo docker run --rm --privileged \
             -v "$(pwd)":/work \
             -w /work \
             alpine:latest \
             sh -c "
               apk update &&
-              apk add alpine-make-iso xorriso syslinux isolinux squashfs-tools mtools dosfstools wget &&
+              apk add xorriso syslinux squashfs-tools mtools dosfstools wget curl git &&
+              wget https://gitlab.alpinelinux.org/alpine/alpine-make-iso/-/raw/master/alpine-make-iso -O /usr/local/bin/alpine-make-iso &&
+              chmod +x /usr/local/bin/alpine-make-iso &&
               alpine-make-iso \
                 --output 'chiquios-${{ matrix.edition }}-${{ matrix.arch }}.iso' \
                 --profile '$PROFILE' \
@@ -49,18 +26,3 @@ jobs:
                 --packages '$PACKAGES' \
                 --branch stable
             "
-
-      - name: Verify and Prepare Artifact
-        run: |
-          ISO_NAME="chiquios-${{ matrix.edition }}-${{ matrix.arch }}.iso"
-          test -s "$ISO_NAME"
-          mkdir -p output_iso
-          mv "$ISO_NAME" output_iso/
-
-      - name: Upload Alpine ISO
-        uses: actions/upload-artifact@v4
-        with:
-          name: chiquios-${{ matrix.edition }}-${{ matrix.arch }}
-          path: output_iso/*.iso
-          if-no-files-found: error
-          retention-days: 14
