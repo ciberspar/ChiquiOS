@@ -1,3 +1,4 @@
+
 name: Build ChiquiOS x32
 
 on:
@@ -6,8 +7,6 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/build-mkosi.yml"
-      - "chiquios/**"
-      - "bacus-pkg/**"
 
 permissions:
   contents: read
@@ -18,45 +17,43 @@ concurrency:
 
 jobs:
   build-x32:
-    name: ChiquiOS Alpine x32
+    name: Alpine Stable x86
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 30
 
     steps:
-      - name: Descargar ChiquiOS
-        uses: actions/checkout@v4
-
-      - name: Preparar herramientas
+      - name: Instalar herramientas
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            git curl ca-certificates \
-            xorriso squashfs-tools
+          sudo apt-get install -y curl ca-certificates
 
-      - name: Obtener constructor de Alpine
+      - name: Descargar ISO oficial de Alpine
         run: |
           set -euxo pipefail
-          git clone --depth 1 \
-            https://github.com/alpinelinux/aports.git \
-            "$RUNNER_TEMP/aports"
 
-          test -f "$RUNNER_TEMP/aports/scripts/mkimage.sh"
+          BASE="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86"
+          ISO="alpine-standard-3.24.3-x86.iso"
 
-      - name: Verificar requisitos del constructor
+          mkdir -p dist
+          curl -fL --retry 3 \
+            "$BASE/$ISO" \
+            -o "dist/$ISO"
+
+          curl -fL --retry 3 \
+            "$BASE/$ISO.sha256" \
+            -o "dist/$ISO.sha256"
+
+      - name: Verificar SHA-256
         run: |
           set -euxo pipefail
-          sed -n '1,180p' \
-            "$RUNNER_TEMP/aports/scripts/mkimage.sh"
+          cd dist
+          sha256sum -c alpine-standard-3.24.3-x86.iso.sha256
 
-          echo "El constructor fue descargado."
-          echo "Todavía falta preparar su entorno Alpine de construcción."
-
-      - name: Publicar registros
-        if: always()
+      - name: Publicar ISO original verificada
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-x32-build-logs
-          path: ${{ runner.temp }}/aports/scripts/mkimage.sh
-          if-no-files-found: warn
-          retention-days: 3
+          name: chiquios-x32-base-alpine-3.24.3
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
