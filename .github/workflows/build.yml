@@ -1,102 +1,48 @@
-name: Build ChiquiOS i386 BIOS
+name: Build ChiquiOS CLI
 
-'on':
-  push:
-    branches:
-      - main
-      - master
+on:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    name: ChiquiOS ${{ matrix.edition }} i386
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        edition: [desktop, cli]
+    runs-on: ubuntu-22.04
 
     steps:
-  - name: Checkout Repository
-    uses: actions/checkout@v4
-  - name: Install Debian Live Tools
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y live-build debootstrap xorriso squashfs-tools syslinux syslinux-common isolinux dosfstools mtools debian-archive-keyring
-  - name: Setup Package Lists
-    shell: bash
-    run: |
-      set -euo pipefail
-      mkdir -p config/package-lists
-      rm -f config/package-lists/*.list.chroot
-      if [ "${{ matrix.edition }}" = "cli" ]; then
-        cat > config/package-lists/chiquios-cli.list.chroot <<'EOF'
-      linux-image-686
-      systemd-sysv
-      live-boot
-      live-config
-      sudo
-      nano
-      curl
-      wget
-      git
-      python3
-      iproute2
-      iputils-ping
-      EOF
-      else
-        cat > config/package-lists/chiquios-desktop.list.chroot <<'EOF'
-      linux-image-686
-      systemd-sysv
-      live-boot
-      live-config
-      task-xfce-desktop
-      lightdm
-      sudo
-      nano
-      curl
-      wget
-      git
-      python3
-      EOF
-      fi
-  - name: Configure Debian Live
-    shell: bash
-    run: |
-      set -euo pipefail
-      lb clean --purge || true
-      lb config \
-        --mode debian \
-        --architectures i386 \
-        --distribution stable \
-        --archive-areas main \
-        --linux-packages linux-image \
-        --linux-flavours 686 \
-        --mirror-bootstrap http://deb.debian.org/debian/ \
-        --mirror-chroot http://deb.debian.org/debian/ \
-        --mirror-binary http://deb.debian.org/debian/ \
-        --binary-images iso \
-        --apt-recommends true \
-        --bootappend-live "boot=live components"
-  - name: Build ISO
-    run: sudo lb build
-  - name: Collect ISO
-    shell: bash
-    run: |
-      set -euo pipefail
-      mkdir -p output_isos
-      shopt -s nullglob
-      isos=(live-image-*.iso)
-      if [ "${#isos[@]}" -eq 0 ]; then
-        echo "ERROR: No se generó ninguna ISO."
-        exit 1
-      fi
-      cp "${isos[0]}" \
-        "output_isos/ChiquiOS-${{ matrix.edition }}-i386.iso"
-  - name: Upload ISO Artifact
-    uses: actions/upload-artifact@v4
-    with:
-      name: ChiquiOS-${{ matrix.edition }}-i386
-      path: output_isos/*.iso
-      if-no-files-found: error
-      retention-days: 7
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install live-build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build
+
+      - name: Configure ChiquiOS
+        run: |
+          mkdir build-cli
+          cd build-cli
+
+          sudo lb config \
+            --mode debian \
+            --distribution bookworm \
+            --architectures i386 \
+            --binary-image iso-hybrid \
+            --bootloaders syslinux \
+            --archive-areas main \
+            --debian-installer none \
+            --iso-volume CHIQUIOS_CLI \
+            --image-name ChiquiOS-CLI-i386
+
+      - name: Build ISO
+        run: |
+          cd build-cli
+          sudo lb build
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiquiOS-CLI-i386
+          path: build-cli/*.iso
+          if-no-files-found: error
