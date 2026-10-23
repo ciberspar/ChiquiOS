@@ -1,192 +1,182 @@
-
 name: Build ChiquiOS
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "chiquios/**"
-      - ".github/workflows/build-chiquios.yml"
+push:
+branches: [main, master]
+workflow_dispatch:
 
 permissions:
-  contents: read
+contents: read
 
 concurrency:
-  group: chiquios-build-${{ github.ref }}
-  cancel-in-progress: true
+group: chiquios-build-${{ github.ref }}
+cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build ChiquiOS ${{ matrix.edition }} x86
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+validate:
+name: Validate ChiquiOS sources
+runs-on: ubuntu-22.04
+steps:
+- name: Checkout ChiquiOS
+uses: actions/checkout@v4
+with:
+path: chiquios-repo
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - edition: cli
-            profile: chiquios_cli
-            source: mkimg_chiquios-cli.sh
+  - name: Check project files
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      required=(
+        "chiquios-repo/chiquios/mkimg_chiquios-cli.sh"
+        "chiquios-repo/chiquios/mkimg_chiquios-desktop.sh"
+        "chiquios-repo/chiquios/genapkovl-chiquios.sh"
+      )
+      for file in "${required[@]}"; do
+        if [[ ! -f "$file" ]]; then
+          echo "::error::Missing required file: $file"
+          echo "Revisa la ruta y el nombre exacto en el repositorio."
+          exit 1
+        fi
+      done
+      echo "=== Shell syntax ==="
+      for file in "${required[@]}"; do
+        bash -n "$file"
+      done
+      echo "Todos los archivos requeridos existen y pasan bash -n."
 
-          - edition: desktop
-            profile: chiquios_desktop
-            source: mkimg_chiquios-desktop.sh
+build:
+name: Build ChiquiOS ${{ matrix.edition }} x86
+needs: validate
+runs-on: ubuntu-22.04
+timeout-minutes: 180
 
-    steps:
-      - name: Checkout ChiquiOS
-        uses: actions/checkout@v4
-        with:
-          path: chiquios-repo
-
-      - name: Install host dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git
-
-      - name: Check Docker
-        run: |
-          docker --version
-          docker info
-
-      - name: Clone Alpine aports
-        run: |
-          git clone \
-            --depth 1 \
-            --branch 3.24-stable \
-            https://github.com/alpinelinux/aports.git \
-            aports
-
-      - name: Clone Bacus-Pkg
-        run: |
-          git clone \
-            --depth 1 \
-            https://github.com/ciberspar/Bacus-pkg.git \
-            bacus-pkg
-
-          test -d bacus-pkg
-
-      - name: Prepare ChiquiOS profiles
-        env:
-          PROFILE: ${{ matrix.profile }}
-          PROFILE_SOURCE: ${{ matrix.source }}
-        run: |
-          set -eu
-
-          test -f "chiquios-repo/chiquios/$PROFILE_SOURCE"
-          test -f "chiquios-repo/chiquios/genapkovl-chiquios.sh"
-
-          cp \
-            "chiquios-repo/chiquios/$PROFILE_SOURCE" \
-            "aports/scripts/mkimg.$PROFILE.sh"
-
-          cp \
-            "chiquios-repo/chiquios/genapkovl-chiquios.sh" \
-            "aports/scripts/genapkovl-chiquios.sh"
-
-          chmod +x "aports/scripts/mkimg.$PROFILE.sh"
-          chmod +x "aports/scripts/genapkovl-chiquios.sh"
-
-          echo "Perfil preparado: $PROFILE"
-
-      - name: Build ISO
-        env:
-          PROFILE: ${{ matrix.profile }}
-          EDITION: ${{ matrix.edition }}
-        run: |
-          set -eu
-
-          mkdir -p dist work
-
-          docker run --rm \
-            --privileged \
-            -e PROFILE="$PROFILE" \
-            -e EDITION="$EDITION" \
-            -v "$PWD/aports:/aports" \
-            -v "$PWD/bacus-pkg:/bacus-pkg:ro" \
-            -v "$PWD/dist:/dist" \
-            -v "$PWD/work:/work" \
-            alpine:3.24 \
-            sh -euxc '
-              apk add --no-cache \
-                alpine-conf \
-                abuild \
-                apk-tools \
-                busybox \
-                fakeroot \
-                git \
-                syslinux \
-                xorriso \
-                squashfs-tools \
-                grub \
-                mtools \
-                sudo \
-                coreutils \
-                bash
-
-              cd /aports/scripts
-
-              echo "Aplicando compatibilidad con apk moderno..."
-
-              if grep -q -- "--no-chown" ./mkimage.sh; then
-                sed -i "s/--no-chown//g" ./mkimage.sh
-              fi
-
-              if grep -q -- "--no-chown" ./mkimage.sh; then
-                echo "ERROR: --no-chown sigue presente"
-                exit 1
-              fi
-
-              echo "Configurando firma del modloop para desarrollo..."
-
-              if [ -f ./mkimg.base.sh ]; then
-                sed -i "s/modloop_sign=yes/modloop_sign=no/g" \
-                  ./mkimg.base.sh
-              else
-                echo "ERROR: no existe mkimg.base.sh"
-                exit 1
-              fi
-
-              if grep -n "modloop_sign=yes" ./mkimg.base.sh; then
-                echo "ERROR: no se pudo cambiar modloop_sign"
-                exit 1
-              fi
-
-              echo "Construyendo ChiquiOS: $EDITION"
-
-              sh ./mkimage.sh \
-                --tag v3.24 \
-                --outdir /dist \
-                --workdir /work \
-                --arch x86 \
-                --profile "$PROFILE" \
-                --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
-                --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
-
-              echo "Build finalizado."
-            '
-
-      - name: Verify generated ISO
-        run: |
-          set -eu
-
-          if ! find dist -maxdepth 1 -type f -name '*.iso' -print -quit | grep -q .; then
-            echo "ERROR: no se generó ningún archivo ISO."
-            echo "Archivos encontrados:"
-            find dist -maxdepth 2 -type f -print
-            exit 1
-          fi
-
-          echo "ISO generadas:"
-          ls -lh dist/*.iso
-
-      - name: Upload ISO artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: chiquios-${{ matrix.edition }}-x86
-          path: dist/*.iso
-          if-no-files-found: error
-          retention-days: 14
+strategy:
+  fail-fast: false
+  matrix:
+    include:
+      - edition: cli
+        profile: chiquios_cli
+        source: mkimg_chiquios-cli.sh
+      - edition: desktop
+        profile: chiquios_desktop
+        source: mkimg_chiquios-desktop.sh
+steps:
+  - name: Checkout ChiquiOS
+    uses: actions/checkout@v4
+    with:
+      path: chiquios-repo
+  - name: Checkout Bacus-Pkg
+    uses: actions/checkout@v4
+    with:
+      repository: ciberspar/Bacus-pkg
+      path: bacus-pkg
+  - name: Checkout Alpine aports
+    uses: actions/checkout@v4
+    with:
+      repository: alpinelinux/aports
+      ref: 3.24-stable
+      path: aports
+  - name: Install ChiquiOS profile
+    env:
+      PROFILE: ${{ matrix.profile }}
+      PROFILE_SOURCE: ${{ matrix.source }}
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      test -f "chiquios-repo/chiquios/$PROFILE_SOURCE"
+      test -f "chiquios-repo/chiquios/genapkovl-chiquios.sh"
+      test -f "aports/scripts/mkimage.sh"
+      test -f "aports/scripts/mkimg.base.sh"
+      install -m 755 \
+        "chiquios-repo/chiquios/$PROFILE_SOURCE" \
+        "aports/scripts/mkimg.$PROFILE.sh"
+      install -m 755 \
+        chiquios-repo/chiquios/genapkovl-chiquios.sh \
+        aports/scripts/genapkovl-chiquios.sh
+      echo "Perfil instalado: $PROFILE"
+  - name: Prepare output directories
+    run: |
+      mkdir -p dist work
+  - name: Build ISO
+    env:
+      PROFILE: ${{ matrix.profile }}
+      EDITION: ${{ matrix.edition }}
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      docker run --rm \
+        --privileged \
+        -e PROFILE="$PROFILE" \
+        -e EDITION="$EDITION" \
+        -v "$PWD/aports:/aports" \
+        -v "$PWD/bacus-pkg:/bacus-pkg:ro" \
+        -v "$PWD/dist:/dist" \
+        -v "$PWD/work:/work" \
+        alpine:3.24 \
+        sh -euxc '
+          apk add --no-cache \
+            alpine-conf \
+            abuild \
+            apk-tools \
+            busybox \
+            fakeroot \
+            git \
+            syslinux \
+            xorriso \
+            squashfs-tools \
+            grub \
+            mtools \
+            sudo \
+            coreutils \
+            bash \
+            ca-certificates
+          cd /aports/scripts
+          echo "=== Verificar herramientas ==="
+          command -v apk
+          command -v abuild
+          test -f ./mkimage.sh
+          test -f "./mkimg.${PROFILE}.sh"
+          echo "=== Compatibilidad de mkimage ==="
+          cp ./mkimage.sh /tmp/mkimage.original.sh
+          sed "s/--no-chown//g" /tmp/mkimage.original.sh > ./mkimage.sh
+          chmod +x ./mkimage.sh
+          echo "=== Preparar clave temporal ==="
+          install -d -m 700 /root/.abuild
+          abuild-keygen -a -i -n
+          echo "=== Verificar clave ==="
+          find /root/.abuild -maxdepth 1 -type f -ls
+          test -s /root/.abuild/abuild.conf
+          echo "=== Compilar ChiquiOS ${EDITION} ==="
+          ./mkimage.sh \
+            --tag v3.24 \
+            --outdir /dist \
+            --workdir /work \
+            --arch x86 \
+            --profile "$PROFILE" \
+            --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
+            --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
+          echo "=== Resultado de la compilación ==="
+          find /dist -maxdepth 2 -type f -ls
+        '
+  - name: Verify generated ISO
+    env:
+      EDITION: ${{ matrix.edition }}
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      ISO="$(find dist -maxdepth 1 -type f -iname '*.iso' -print -quit)"
+      if [[ -z "$ISO" ]]; then
+        echo "::error::No se generó ninguna ISO para $EDITION."
+        find dist -maxdepth 3 -type f -print || true
+        exit 1
+      fi
+      file "$ISO"
+      ls -lh "$ISO"
+      sha256sum "$ISO"
+  - name: Upload ISO artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: chiquiOS-${{ matrix.edition }}-x86
+      path: dist/*.iso
+      if-no-files-found: error
+      retention-days: 14
