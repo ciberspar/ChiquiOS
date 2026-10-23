@@ -1,0 +1,12 @@
+
+sudo
+ca-certificates
+network-manager
+iproute2
+iputils-ping
+nano
+less
+curl
+wget
+git
+xz-utils
