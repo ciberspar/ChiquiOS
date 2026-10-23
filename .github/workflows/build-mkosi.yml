@@ -3,6 +3,7 @@ name: Build ChiquiOS with Mkosi
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -15,9 +16,11 @@ on:
       - "modules/**"
       - "bin/**"
       - ".github/workflows/build-mkosi.yml"
+
   pull_request:
     branches:
       - main
+
   schedule:
     - cron: "0 8 * * 0"
 
@@ -25,12 +28,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: chiquios-mkosi-${{ github.ref }}
+  group: chiquios-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build ChiquiOS (Debian 13)
+    name: Build ChiquiOS - Debian 13
     runs-on: ubuntu-24.04
     timeout-minutes: 180
 
@@ -40,15 +43,15 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Show build environment
+      - name: Show runner information
         shell: bash
         run: |
           set -euxo pipefail
           uname -a
-          df -h
           id
+          df -h
 
-      - name: Install Mkosi dependencies
+      - name: Install build dependencies
         shell: bash
         run: |
           set -euxo pipefail
@@ -83,63 +86,89 @@ jobs:
             dbus \
             gnupg
 
-      - name: Get Mkosi from official repository
+      - name: Download Mkosi
         shell: bash
         run: |
           set -euxo pipefail
 
-          git clone --depth 1 \
+          MKOSI_DIR="$RUNNER_TEMP/mkosi"
+
+          git clone \
+            --depth 1 \
             https://github.com/systemd/mkosi.git \
-            "$RUNNER_TEMP/mkosi"
+            "$MKOSI_DIR"
 
-          echo "$RUNNER_TEMP/mkosi/bin" >> "$GITHUB_PATH"
+          MKOSI_BIN="$MKOSI_DIR/bin/mkosi"
 
-          "$RUNNER_TEMP/mkosi/bin/mkosi" --version
+          if [ ! -x "$MKOSI_BIN" ]; then
+            echo "::error::Mkosi executable was not found."
+            exit 1
+          fi
 
-      - name: Verify ChiquiOS configuration
+          echo "$MKOSI_DIR/bin" >> "$GITHUB_PATH"
+
+          "$MKOSI_BIN" --version
+
+      - name: Validate ChiquiOS configuration
         shell: bash
         run: |
           set -euxo pipefail
 
           if [ ! -f mkosi.conf ]; then
-            echo "::error::mkosi.conf not found in repository root"
+            echo "::error::mkosi.conf is missing from the repository root."
             exit 1
           fi
 
-          mkosi summary
+          MKOSI_BIN="$RUNNER_TEMP/mkosi/bin/mkosi"
 
-      - name: Build ChiquiOS image
+          "$MKOSI_BIN" summary
+
+      - name: Build ChiquiOS
         shell: bash
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -euxo pipefail
 
-          sudo -E mkosi --force --debug build
+          MKOSI_BIN="$RUNNER_TEMP/mkosi/bin/mkosi"
 
-      - name: List build artifacts
+          if [ ! -x "$MKOSI_BIN" ]; then
+            echo "::error::Mkosi executable is missing."
+            exit 1
+          fi
+
+          "$MKOSI_BIN" --version
+
+          sudo -E "$MKOSI_BIN" \
+            --force \
+            --debug \
+            build
+
+      - name: Inspect generated images
         if: always()
         shell: bash
         run: |
           set -u
 
-          echo "Repository files:"
-          find . -maxdepth 3 -type f \
+          echo "Searching for generated images..."
+
+          find . -maxdepth 5 -type f \
             \( -name '*.iso' \
             -o -name '*.raw' \
             -o -name '*.img' \
-            -o -name '*.qcow2' \) \
+            -o -name '*.qcow2' \
+            -o -name '*.manifest' \
+            -o -name '*SHA256SUMS*' \) \
             -print || true
 
-          echo "Mkosi output:"
           if [ -d mkosi.output ]; then
-            find mkosi.output -maxdepth 3 -type f -print
+            echo "Contents of mkosi.output:"
+            find mkosi.output -maxdepth 5 -type f -print
           fi
 
-          echo "Disk space:"
           df -h
 
-      - name: Upload ChiquiOS artifacts
+      - name: Upload ChiquiOS images
         if: success()
         uses: actions/upload-artifact@v4
         with:
