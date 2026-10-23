@@ -23,29 +23,9 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies & alpine-make-iso
+      - name: Build Alpine ISO using Docker
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            xorriso \
-            syslinux-common \
-            isolinux \
-            squashfs-tools \
-            dosfstools \
-            mtools \
-            genisoimage \
-            qemu-user-static \
-            binfmt-support \
-            wget \
-            apk-tools
-
-          # Descargar e instalar alpine-make-iso desde su fuente oficial
-          wget https://gitlab.alpinelinux.org/alpine/alpine-make-iso/-/raw/master/alpine-make-iso -O /tmp/alpine-make-iso
-          chmod +x /tmp/alpine-make-iso
-          sudo mv /tmp/alpine-make-iso /usr/local/bin/
-
-      - name: Build Alpine Live ISO
-        run: |
+          # Configurar paquetes según la edición
           if [ "${{ matrix.edition }}" = "desktop" ]; then
             PACKAGES="nano curl wget htop python3 git xfce4 xfce4-terminal lightdm"
             PROFILE="xfce"
@@ -54,12 +34,21 @@ jobs:
             PROFILE="standard"
           fi
 
-          sudo alpine-make-iso \
-            --output "chiquios-${{ matrix.edition }}-${{ matrix.arch }}.iso" \
-            --profile "$PROFILE" \
-            --arch "${{ matrix.arch }}" \
-            --packages "$PACKAGES" \
-            --branch stable
+          # Ejecutar alpine-make-iso dentro de un contenedor nativo de Alpine
+          sudo docker run --rm --privileged \
+            -v "$(pwd)":/work \
+            -w /work \
+            alpine:latest \
+            sh -c "
+              apk update &&
+              apk add alpine-make-iso xorriso syslinux isolinux squashfs-tools mtools dosfstools wget &&
+              alpine-make-iso \
+                --output 'chiquios-${{ matrix.edition }}-${{ matrix.arch }}.iso' \
+                --profile '$PROFILE' \
+                --arch '${{ matrix.arch }}' \
+                --packages '$PACKAGES' \
+                --branch stable
+            "
 
       - name: Verify and Prepare Artifact
         run: |
