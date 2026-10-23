@@ -1,16 +1,24 @@
 
-#!/bin/sh
-
 profile_chiquios_cli() {
     profile_standard
 
-    title="ChiquiOS CLI"
-    desc="ChiquiOS minimal x86 with Bacus-Pkg"
     hostname="chiquios"
+    image_name="chiquios-cli"
+    output_filename="chiquios-cli-${RELEASE}-${ARCH}.iso"
+    output_format="iso"
+    image_ext="iso"
 
-    image_name="chiquios-x32-cli"
-    output_filename="chiquios-x32-cli-${RELEASE}-${ARCH}.iso"
+    apks="$apks
+        bash
+        ca-certificates
+        curl
+        git
+        nano
+        sudo
+        util-linux
+        vim
+    "
 
-    apks="$apks git curl ca-certificates nano"
-    apkovl="/tmp/aports/scripts/genapkovl-chiquios.sh"
+    # Bacus-Pkg se incorpora al sistema mediante el overlay
+    apkovl="genapkovl-chiquios.sh"
 }
