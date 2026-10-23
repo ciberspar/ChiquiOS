@@ -1,0 +1,80 @@
+
+name: Build ChiquiOS with mkosi
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'mkosi.conf'
+      - 'mkosi.*.conf'
+      - '.github/workflows/build-mkosi.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3 \
+            python3-pip \
+            pipx \
+            debootstrap \
+            systemd-container \
+            systemd-boot \
+            qemu-utils \
+            dosfstools \
+            mtools \
+            xorriso \
+            gdisk \
+            squashfs-tools \
+            debian-archive-keyring \
+            ca-certificates \
+            curl \
+            git \
+            make \
+            gcc \
+            pkg-config \
+            libacl1-dev \
+            libcap-dev \
+            liblzma-dev \
+            libzstd-dev \
+            libssl-dev
+
+      - name: Install current mkosi
+        run: |
+          pipx install 'mkosi'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mkosi" --version
+
+      - name: Validate configuration
+        run: |
+          "$HOME/.local/bin/mkosi" summary
+
+      - name: Build disk image
+        run: |
+          sudo "$HOME/.local/bin/mkosi" build
+
+      - name: List generated files
+        if: always()
+        run: |
+          find mkosi.output -maxdepth 2 -type f -printf '%p %s bytes\n' || true
+
+      - name: Upload build output
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquios-mkosi-x64
+          path: mkosi.output/
+          if-no-files-found: error
+          retention-days: 14
