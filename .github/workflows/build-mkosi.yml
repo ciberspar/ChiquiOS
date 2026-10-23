@@ -1,154 +1,55 @@
-name: Build ChiquiOS
+name: Build Alpine ChiquiOS
 
 on:
-push:
-branches:
-- main
-- master
-workflow_dispatch:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-name: Build ChiquiOS ${{ matrix.edition }} x86
-runs-on: ubuntu-22.04
-timeout-minutes: 180
+  build:
+    name: Build Alpine ISO (amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
 
-strategy:
-  fail-fast: false
-  matrix:
-    include:
-      - edition: cli
-        profile: chiquios_cli
-        script: mkimg_chiquios-cli.sh
-      - edition: desktop
-        profile: chiquios_desktop
-        script: mkimg_chiquios-desktop.sh
-steps:
-  - name: Checkout ChiquiOS
-    uses: actions/checkout@v4
-  - name: Checkout Bacus-Pkg
-    uses: actions/checkout@v4
-    with:
-      repository: ciberspar/Bacus-pkg
-      path: bacus-pkg
-  - name: Checkout Alpine aports
-    uses: actions/checkout@v4
-    with:
-      repository: alpinelinux/aports
-      ref: 3.24-stable
-      path: aports
-  - name: Validate project files
-    env:
-      PROFILE_SCRIPT: ${{ matrix.script }}
-    shell: bash
-    run: |
-      set -Eeuo pipefail
-      echo "=== Project root ==="
-      pwd
-      ls -la
-      ls -la chiquios
-      for file in \
-        "chiquios/$PROFILE_SCRIPT" \
-        "chiquios/genapkovl-chiquios.sh" \
-        "aports/scripts/mkimage.sh" \
-        "aports/scripts/mkimg.base.sh"
-      do
-        if [[ ! -f "$file" ]]; then
-          echo "::error::Missing required file: $file"
-          exit 1
-        fi
-      done
-      bash -n "chiquios/$PROFILE_SCRIPT"
-      bash -n chiquios/genapkovl-chiquios.sh
-  - name: Install ChiquiOS profile
-    env:
-      PROFILE: ${{ matrix.profile }}
-      PROFILE_SCRIPT: ${{ matrix.script }}
-    shell: bash
-    run: |
-      set -Eeuo pipefail
-      install -m 755 \
-        "chiquios/$PROFILE_SCRIPT" \
-        "aports/scripts/mkimg.$PROFILE.sh"
-      install -m 755 \
-        chiquios/genapkovl-chiquios.sh \
-        aports/scripts/genapkovl-chiquios.sh
-  - name: Build ISO
-    env:
-      PROFILE: ${{ matrix.profile }}
-      EDITION: ${{ matrix.edition }}
-    shell: bash
-    run: |
-      set -Eeuo pipefail
-      mkdir -p dist work
-      sudo docker run --rm \
-        --privileged \
-        -e PROFILE="$PROFILE" \
-        -e EDITION="$EDITION" \
-        -v "$PWD/aports:/aports" \
-        -v "$PWD/bacus-pkg:/bacus-pkg:ro" \
-        -v "$PWD/dist:/dist" \
-        -v "$PWD/work:/work" \
-        alpine:3.24 \
-        sh -euxc '
-          apk add --no-cache \
-            alpine-conf \
-            abuild \
-            apk-tools \
-            busybox \
-            fakeroot \
-            git \
-            syslinux \
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Alpine ISO Tools on Runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            alpine-make-iso \
             xorriso \
+            syslinux-common \
+            isolinux \
             squashfs-tools \
-            grub \
+            dosfstools \
             mtools \
-            sudo \
-            coreutils \
-            bash \
-            ca-certificates
-          cd /aports/scripts
-          echo "=== Compatibility with current apk ==="
-          sed -i "s/--no-chown//g" ./mkimage.sh
-          echo "=== Disable modloop signing for test build ==="
-          sed -i "s/modloop_sign=yes/modloop_sign=no/g" ./mkimg.base.sh
-          echo "=== Verify profile ==="
-          grep -n "modloop_sign" ./mkimg.base.sh || true
-          test -f "./mkimg.${PROFILE}.sh"
-          echo "=== Build ChiquiOS ${EDITION} ==="
-          ./mkimage.sh \
-            --tag v3.24 \
-            --outdir /dist \
-            --workdir /work \
-            --arch x86 \
-            --profile "$PROFILE" \
-            --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
-            --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
-          echo "=== Generated files ==="
-          find /dist -maxdepth 2 -type f -ls
-        '
-  - name: Verify ISO
-    env:
-      EDITION: ${{ matrix.edition }}
-    shell: bash
-    run: |
-      set -Eeuo pipefail
-      ISO="$(find dist -maxdepth 1 -type f -iname '*.iso' -print -quit)"
-      if [[ -z "$ISO" ]]; then
-        echo "::error::No ISO was generated for $EDITION"
-        find dist -maxdepth 3 -type f -print || true
-        exit 1
-      fi
-      file "$ISO"
-      sha256sum "$ISO"
-      ls -lh "$ISO"
-  - name: Upload ISO
-    uses: actions/upload-artifact@v4
-    with:
-      name: chiquiOS-${{ matrix.edition }}-x86
-      path: dist/*.iso
-      if-no-files-found: error
-      retention-days: 14
+            genisoimage
+
+      - name: Build Alpine Live ISO
+        run: |
+          # alpine-make-iso empaqueta el sistema base usando el bootloader nativo de Alpine
+          sudo alpine-make-iso \
+            --output chiquios-alpine-amd64.iso \
+            --profile standard \
+            --packages "nano curl wget htop python3 git" \
+            --branch stable
+
+      - name: Verify and Prepare Artifact
+        run: |
+          test -s chiquios-alpine-amd64.iso
+          mkdir -p output_iso
+          mv chiquios-alpine-amd64.iso output_iso/
+
+      - name: Upload Alpine ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquios-alpine-amd64
+          path: output_iso/*.iso
+          if-no-files-found: error
+          retention-days: 14
