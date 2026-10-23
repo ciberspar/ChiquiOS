@@ -2,7 +2,9 @@ name: Build ChiquiOS
 
 on:
 push:
-branches: [main, master]
+branches:
+- main
+- master
 workflow_dispatch:
 
 permissions:
@@ -38,29 +40,30 @@ steps:
       repository: alpinelinux/aports
       ref: 3.24-stable
       path: aports
-  - name: Validate files
+  - name: Validate project files
     env:
       PROFILE_SCRIPT: ${{ matrix.script }}
     shell: bash
     run: |
       set -Eeuo pipefail
-      echo "=== Raíz del repositorio ==="
+      echo "=== Project root ==="
       pwd
       ls -la
-      ls -la chiquios || true
-      test -f "chiquios/$PROFILE_SCRIPT" || {
-        echo "::error::No existe chiquios/$PROFILE_SCRIPT"
-        exit 1
-      }
-      test -f chiquios/genapkovl-chiquios.sh || {
-        echo "::error::No existe chiquios/genapkovl-chiquios.sh"
-        exit 1
-      }
-      test -f aports/scripts/mkimage.sh
-      test -f aports/scripts/mkimg.base.sh
+      ls -la chiquios
+      for file in \
+        "chiquios/$PROFILE_SCRIPT" \
+        "chiquios/genapkovl-chiquios.sh" \
+        "aports/scripts/mkimage.sh" \
+        "aports/scripts/mkimg.base.sh"
+      do
+        if [[ ! -f "$file" ]]; then
+          echo "::error::Missing required file: $file"
+          exit 1
+        fi
+      done
       bash -n "chiquios/$PROFILE_SCRIPT"
       bash -n chiquios/genapkovl-chiquios.sh
-  - name: Install ChiquiOS profiles
+  - name: Install ChiquiOS profile
     env:
       PROFILE: ${{ matrix.profile }}
       PROFILE_SCRIPT: ${{ matrix.script }}
@@ -108,10 +111,14 @@ steps:
             bash \
             ca-certificates
           cd /aports/scripts
+          echo "=== Compatibility with current apk ==="
           sed -i "s/--no-chown//g" ./mkimage.sh
-          install -d -m 700 /root/.abuild
-          abuild-keygen -a -i -n
-          test -s /root/.abuild/abuild.conf
+          echo "=== Disable modloop signing for test build ==="
+          sed -i "s/modloop_sign=yes/modloop_sign=no/g" ./mkimg.base.sh
+          echo "=== Verify profile ==="
+          grep -n "modloop_sign" ./mkimg.base.sh || true
+          test -f "./mkimg.${PROFILE}.sh"
+          echo "=== Build ChiquiOS ${EDITION} ==="
           ./mkimage.sh \
             --tag v3.24 \
             --outdir /dist \
@@ -120,6 +127,7 @@ steps:
             --profile "$PROFILE" \
             --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
             --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
+          echo "=== Generated files ==="
           find /dist -maxdepth 2 -type f -ls
         '
   - name: Verify ISO
@@ -130,7 +138,7 @@ steps:
       set -Eeuo pipefail
       ISO="$(find dist -maxdepth 1 -type f -iname '*.iso' -print -quit)"
       if [[ -z "$ISO" ]]; then
-        echo "::error::No se generó la ISO de $EDITION"
+        echo "::error::No ISO was generated for $EDITION"
         find dist -maxdepth 3 -type f -print || true
         exit 1
       fi
