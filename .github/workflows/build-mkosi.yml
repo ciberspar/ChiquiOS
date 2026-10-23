@@ -9,12 +9,12 @@ permissions:
 contents: read
 
 concurrency:
-group: chiquios-build-${{ github.ref }}
+group: chiquios-${{ github.ref }}
 cancel-in-progress: true
 
 jobs:
 validate:
-name: Validate ChiquiOS sources
+name: Validate sources
 runs-on: ubuntu-22.04
 steps:
 - name: Checkout ChiquiOS
@@ -22,44 +22,38 @@ uses: actions/checkout@v4
 with:
 path: chiquios-repo
 
-  - name: Check project files
+  - name: Verify project files
     shell: bash
     run: |
       set -Eeuo pipefail
-      required=(
-        "chiquios-repo/chiquios/mkimg_chiquios-cli.sh"
-        "chiquios-repo/chiquios/mkimg_chiquios-desktop.sh"
-        "chiquios-repo/chiquios/genapkovl-chiquios.sh"
-      )
-      for file in "${required[@]}"; do
+      for file in \
+        chiquios-repo/chiquios/mkimg_chiquios-cli.sh \
+        chiquios-repo/chiquios/mkimg_chiquios-desktop.sh \
+        chiquios-repo/chiquios/genapkovl-chiquios.sh
+      do
         if [[ ! -f "$file" ]]; then
-          echo "::error::Missing required file: $file"
-          echo "Revisa la ruta y el nombre exacto en el repositorio."
+          echo "::error::Missing file: $file"
           exit 1
         fi
-      done
-      echo "=== Shell syntax ==="
-      for file in "${required[@]}"; do
         bash -n "$file"
       done
-      echo "Todos los archivos requeridos existen y pasan bash -n."
 
 build:
 name: Build ChiquiOS ${{ matrix.edition }} x86
 needs: validate
 runs-on: ubuntu-22.04
 timeout-minutes: 180
-
 strategy:
-  fail-fast: false
-  matrix:
-    include:
-      - edition: cli
-        profile: chiquios_cli
-        source: mkimg_chiquios-cli.sh
-      - edition: desktop
-        profile: chiquios_desktop
-        source: mkimg_chiquios-desktop.sh
+fail-fast: false
+matrix:
+include:
+- edition: cli
+profile: chiquios_cli
+source: mkimg_chiquios-cli.sh
+- edition: desktop
+profile: chiquios_desktop
+source: mkimg_chiquios-desktop.sh
+
 steps:
   - name: Checkout ChiquiOS
     uses: actions/checkout@v4
@@ -76,27 +70,26 @@ steps:
       repository: alpinelinux/aports
       ref: 3.24-stable
       path: aports
+  - name: Install build dependencies
+    run: |
+      set -Eeuo pipefail
+      sudo apt-get update
+      sudo apt-get install -y docker.io git file
+      sudo systemctl start docker
+      sudo docker version
   - name: Install ChiquiOS profile
     env:
       PROFILE: ${{ matrix.profile }}
-      PROFILE_SOURCE: ${{ matrix.source }}
+      SOURCE: ${{ matrix.source }}
     shell: bash
     run: |
       set -Eeuo pipefail
-      test -f "chiquios-repo/chiquios/$PROFILE_SOURCE"
-      test -f "chiquios-repo/chiquios/genapkovl-chiquios.sh"
-      test -f "aports/scripts/mkimage.sh"
-      test -f "aports/scripts/mkimg.base.sh"
-      install -m 755 \
-        "chiquios-repo/chiquios/$PROFILE_SOURCE" \
-        "aports/scripts/mkimg.$PROFILE.sh"
-      install -m 755 \
-        chiquios-repo/chiquios/genapkovl-chiquios.sh \
-        aports/scripts/genapkovl-chiquios.sh
-      echo "Perfil instalado: $PROFILE"
-  - name: Prepare output directories
-    run: |
-      mkdir -p dist work
+      test -f "chiquios-repo/chiquios/$SOURCE"
+      test -f chiquios-repo/chiquios/genapkovl-chiquios.sh
+      test -f aports/scripts/mkimage.sh
+      test -f aports/scripts/mkimg.base.sh
+      install -m 755 "chiquios-repo/chiquios/$SOURCE" "aports/scripts/mkimg.$PROFILE.sh"
+      install -m 755 chiquios-repo/chiquios/genapkovl-chiquios.sh aports/scripts/genapkovl-chiquios.sh
   - name: Build ISO
     env:
       PROFILE: ${{ matrix.profile }}
@@ -104,7 +97,8 @@ steps:
     shell: bash
     run: |
       set -Eeuo pipefail
-      docker run --rm \
+      mkdir -p dist work
+      sudo docker run --rm \
         --privileged \
         -e PROFILE="$PROFILE" \
         -e EDITION="$EDITION" \
@@ -114,39 +108,14 @@ steps:
         -v "$PWD/work:/work" \
         alpine:3.24 \
         sh -euxc '
-          apk add --no-cache \
-            alpine-conf \
-            abuild \
-            apk-tools \
-            busybox \
-            fakeroot \
-            git \
-            syslinux \
-            xorriso \
-            squashfs-tools \
-            grub \
-            mtools \
-            sudo \
-            coreutils \
-            bash \
-            ca-certificates
+          apk add --no-cache alpine-conf abuild apk-tools busybox fakeroot git syslinux xorriso squashfs-tools grub mtools sudo coreutils bash ca-certificates
           cd /aports/scripts
-          echo "=== Verificar herramientas ==="
-          command -v apk
-          command -v abuild
           test -f ./mkimage.sh
           test -f "./mkimg.${PROFILE}.sh"
-          echo "=== Compatibilidad de mkimage ==="
-          cp ./mkimage.sh /tmp/mkimage.original.sh
-          sed "s/--no-chown//g" /tmp/mkimage.original.sh > ./mkimage.sh
-          chmod +x ./mkimage.sh
-          echo "=== Preparar clave temporal ==="
+          sed -i "s/--no-chown//g" ./mkimage.sh
           install -d -m 700 /root/.abuild
           abuild-keygen -a -i -n
-          echo "=== Verificar clave ==="
-          find /root/.abuild -maxdepth 1 -type f -ls
           test -s /root/.abuild/abuild.conf
-          echo "=== Compilar ChiquiOS ${EDITION} ==="
           ./mkimage.sh \
             --tag v3.24 \
             --outdir /dist \
@@ -155,10 +124,9 @@ steps:
             --profile "$PROFILE" \
             --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/main \
             --repository https://dl-cdn.alpinelinux.org/alpine/v3.24/community
-          echo "=== Resultado de la compilación ==="
           find /dist -maxdepth 2 -type f -ls
         '
-  - name: Verify generated ISO
+  - name: Verify ISO
     env:
       EDITION: ${{ matrix.edition }}
     shell: bash
@@ -166,14 +134,14 @@ steps:
       set -Eeuo pipefail
       ISO="$(find dist -maxdepth 1 -type f -iname '*.iso' -print -quit)"
       if [[ -z "$ISO" ]]; then
-        echo "::error::No se generó ninguna ISO para $EDITION."
+        echo "::error::No ISO generated for $EDITION"
         find dist -maxdepth 3 -type f -print || true
         exit 1
       fi
       file "$ISO"
       ls -lh "$ISO"
       sha256sum "$ISO"
-  - name: Upload ISO artifact
+  - name: Upload ISO
     uses: actions/upload-artifact@v4
     with:
       name: chiquiOS-${{ matrix.edition }}-x86
