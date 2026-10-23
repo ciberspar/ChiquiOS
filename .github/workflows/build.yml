@@ -1,4 +1,4 @@
-name: Build ChiquiOS
+name: Build ChiquiOS with Debian Live
 
 on:
   push:
@@ -24,19 +24,51 @@ jobs:
         with:
           platforms: all
 
-      - name: Install Build Tools & Keyrings
+      - name: Install Debian Live Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin debian-archive-keyring
+          sudo apt-get install -y live-build live-boot live-config debootstrap qemu-user-static binfmt-support xorriso mtools dosfstools grub-common grub-pc-bin debian-archive-keyring
 
-      - name: Prepare Package Lists for CLI
+      - name: Setup Package Lists per Edition
         run: |
+          mkdir -p config/package-lists
+          rm -f config/package-lists/*.list.chroot
+
           if [ "${{ matrix.edition }}" = "cli" ]; then
-            mkdir -p config/package-lists
-            printf "systemd-sysv\nlinux-image-generic\nlive-boot\nlive-config\nnano\ncurl\nwget\ngit\npython3\nnetcat-openbsd\nnmap\n" > config/package-lists/chiquios.list.chroot
+            echo "Escribiendo paquetes para la versión CLI..."
+            cat << 'EOF' > config/package-lists/chiquios-cli.list.chroot
+          systemd-sysv
+          linux-image-generic
+          live-boot
+          live-config
+          nano
+          curl
+          wget
+          git
+          python3
+          netcat-openbsd
+          nmap
+          EOF
+          else
+            echo "Escribiendo paquetes para la versión Desktop (con Plymouth y entorno)..."
+            cat << 'EOF' > config/package-lists/chiquios-desktop.list.chroot
+          systemd-sysv
+          linux-image-generic
+          live-boot
+          live-config
+          task-desktop
+          lightdm
+          plymouth
+          plymouth-themes
+          nano
+          curl
+          wget
+          git
+          python3
+          EOF
           fi
 
-      - name: Configure Live-Build
+      - name: Configure Debian Live
         run: |
           TARGET_ARCH="${{ matrix.arch }}"
           MIRROR_URL="http://ftp.debian.org/debian/"
@@ -51,24 +83,27 @@ jobs:
             BOOT_PARAMS="boot=live quiet splash plymouth.ignore-serial-consoles vt.global_cursor_default=0 logo.nologo"
           fi
 
+          lb clean --purge || true
+
           lb config \
             --mode debian \
             --architectures "$TARGET_ARCH" \
             --distribution stable \
-            --parent-mirror-bootstrap "$MIRROR_URL" \
-            --parent-mirror-chroot "$MIRROR_URL" \
             --mirror-bootstrap "$MIRROR_URL" \
             --mirror-chroot "$MIRROR_URL" \
+            --mirror-binary "$MIRROR_URL" \
+            --parent-mirror-bootstrap "$MIRROR_URL" \
+            --parent-mirror-chroot "$MIRROR_URL" \
             --binary-images iso-hybrid \
             --apt-recommends false \
             --bootloader "$BOOTLOADER" \
             --bootappend-live "$BOOT_PARAMS"
 
-      - name: Build ISO
+      - name: Build ISO with Debian Live
         run: |
           sudo lb build
 
-      - name: Rename and Prepare ISO Artifact
+      - name: Collect ISO Artifacts
         run: |
           mkdir -p output_isos
           mv live-image-*.hybrid.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || cp live-image-*.iso output_isos/chiquiOS-${{ matrix.edition }}-${{ matrix.arch }}.iso || true
