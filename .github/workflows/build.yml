@@ -34,11 +34,21 @@ jobs:
           mkdir -p config/package-lists
           rm -f config/package-lists/*.list.chroot
 
+          # Seleccionar sabor de kernel según arquitectura
+          KERNEL_PKG="linux-image-amd64"
+          if [ "${{ matrix.arch }}" = "i386" ]; then
+            KERNEL_PKG="linux-image-686"
+          elif [ "${{ matrix.arch }}" = "arm64" ]; then
+            KERNEL_PKG="linux-image-arm64"
+          elif [ "${{ matrix.arch }}" = "ppc64el" ]; then
+            KERNEL_PKG="linux-image-powerpc64le"
+          fi
+
           if [ "${{ matrix.edition }}" = "cli" ]; then
             echo "Escribiendo paquetes para la versión CLI..."
-            cat << 'EOF' > config/package-lists/chiquios-cli.list.chroot
+            cat << EOF > config/package-lists/chiquios-cli.list.chroot
+          $KERNEL_PKG
           systemd-sysv
-          linux-image-generic
           live-boot
           live-config
           nano
@@ -51,9 +61,9 @@ jobs:
           EOF
           else
             echo "Escribiendo paquetes para la versión Desktop (con Plymouth y entorno)..."
-            cat << 'EOF' > config/package-lists/chiquios-desktop.list.chroot
+            cat << EOF > config/package-lists/chiquios-desktop.list.chroot
+          $KERNEL_PKG
           systemd-sysv
-          linux-image-generic
           live-boot
           live-config
           task-desktop
@@ -74,8 +84,15 @@ jobs:
           MIRROR_URL="http://ftp.debian.org/debian/"
 
           BOOTLOADER="isolinux"
-          if [ "$TARGET_ARCH" = "ppc64el" ] || [ "$TARGET_ARCH" = "arm64" ]; then
+          FLAVOUR="amd64"
+          if [ "$TARGET_ARCH" = "i386" ]; then
+            FLAVOUR="686"
+          elif [ "$TARGET_ARCH" = "arm64" ]; then
             BOOTLOADER="grub-efi"
+            FLAVOUR="arm64"
+          elif [ "$TARGET_ARCH" = "ppc64el" ]; then
+            BOOTLOADER="grub-efi"
+            FLAVOUR="powerpc64le"
           fi
 
           BOOT_PARAMS="boot=live"
@@ -90,6 +107,8 @@ jobs:
             --architectures "$TARGET_ARCH" \
             --distribution stable \
             --security false \
+            --linux-packages "linux-image" \
+            --linux-flavours "$FLAVOUR" \
             --mirror-bootstrap "$MIRROR_URL" \
             --mirror-chroot "$MIRROR_URL" \
             --mirror-binary "$MIRROR_URL" \
