@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install build tools and Debian keyring
+      - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -29,20 +29,25 @@ jobs:
             debootstrap \
             debian-archive-keyring \
             ca-certificates \
+            gnupg \
             xorriso \
             grub-pc-bin \
             grub-efi-amd64-bin \
             grub-efi-ia32-bin
-          sudo apt-get install --reinstall -y \
-            debian-archive-keyring
-          echo "=== live-build ==="
+      - name: Check Debian signing key
+        run: |
+          set -eux
+          KEYRING=/usr/share/keyrings/debian-archive-keyring.gpg
+          test -s "$KEYRING"
+          gpg --no-default-keyring \
+            --keyring "$KEYRING" \
+            --list-keys F8D2585B8783D481
+      - name: Show build tool versions
+        run: |
           lb --version
-          echo "=== debootstrap ==="
           debootstrap --version
-          echo "=== Debian keyring ==="
           dpkg-query -W debian-archive-keyring
-          test -s /usr/share/keyrings/debian-archive-keyring.gpg
-      - name: Reset generated live-build configuration
+      - name: Clean previous configuration
         run: |
           sudo lb clean --purge || true
           rm -rf config
@@ -81,10 +86,10 @@ jobs:
           sudo lb build
       - name: Find and rename ISO
         run: |
+          set -eu
           ISO="$(find . -maxdepth 1 -type f -name '*.iso' -print -quit)"
           if [ -z "$ISO" ]; then
-            echo "ERROR: no se generó ninguna ISO."
-            find . -maxdepth 2 -type f -print | head -200
+            echo "ERROR: live-build no generó ninguna ISO."
             exit 1
           fi
           mv "$ISO" "${{ matrix.iso_name }}"
