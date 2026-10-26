@@ -1,0 +1,43 @@
+
+name: Build ChiquiOS
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build x86 32-bit BIOS
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar herramientas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm gcc binutils make
+
+      - name: Compilar ChiquiOS
+        run: make clean check
+
+      - name: Comprobar imagen de arranque
+        run: |
+          test -f build/chiquios.img
+          test "$(stat -c%s build/chiquios.img)" -eq 16896
+          file build/chiquios.img
+          echo "ChiquiOS: imagen creada correctamente"
+
+      - name: Guardar imagen como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: chiquios-x86-bios
+          path: build/chiquios.img
+          if-no-files-found: error
+          retention-days: 14
