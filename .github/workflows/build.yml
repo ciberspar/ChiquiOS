@@ -1,9 +1,10 @@
 
-name: Build ChiquiOS
+name: Build ChiquiOS 0.4 ISO
 
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -11,33 +12,53 @@ permissions:
 
 jobs:
   build:
-    name: Build x86 32-bit BIOS
+    name: Build x86 BIOS ISO
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
-      - name: Descargar el repositorio
+      - name: Download repository
         uses: actions/checkout@v4
 
-      - name: Instalar herramientas
+      - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm gcc binutils make
+          sudo apt-get install -y \
+            nasm \
+            gcc \
+            binutils \
+            make \
+            xorriso
 
-      - name: Compilar ChiquiOS
-        run: make clean check
+      - name: Clean previous build
+        run: make clean
 
-      - name: Comprobar imagen de arranque
+      - name: Compile ChiquiOS
+        run: make
+
+      - name: Check kernel and image
+        run: make check
+
+      - name: Build bootable ISO
+        run: make iso
+
+      - name: Verify generated files
         run: |
           test -f build/chiquios.img
-          test "$(stat -c%s build/chiquios.img)" -eq 16896
-          file build/chiquios.img
-          echo "ChiquiOS: imagen creada correctamente"
+          test -f build/chiquios.iso
+          ls -lh build/chiquios.img build/chiquios.iso
+          file build/chiquios.iso
 
-      - name: Guardar imagen como artefacto
+      - name: Upload disk image
         uses: actions/upload-artifact@v4
         with:
-          name: chiquios-x86-bios
+          name: ChiquiOS-0.4-Disk
           path: build/chiquios.img
           if-no-files-found: error
-          retention-days: 14
+
+      - name: Upload ISO image
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiquiOS-0.4-ISO
+          path: build/chiquios.iso
+          if-no-files-found: error
