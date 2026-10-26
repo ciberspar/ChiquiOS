@@ -17,5 +17,6 @@ char keyboard_read_char(void);
 
 void shell_run(void);
 void kernel_main(void);
+void pci_scan_usb(void);
 
 #endif
