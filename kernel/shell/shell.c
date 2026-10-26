@@ -1,103 +1,121 @@
 
 #include "../include/drivers.h"
 
-static char line[80];
+static void print_banner(void)
+{
+    vga_write("\n");
+    vga_write("  /\\                 ChiquiOS 0.4\n");
+    vga_write(" /  \\                Minimal. Ligero. Tu sistema.\n");
+    vga_write("/ /\\ \\               --------------------------\n");
+    vga_write("\\/  \\/\n");
+    vga_write("\n");
+    vga_write("Kernel       : ChiquiOS v0.4\n");
+    vga_write("Arquitectura : x86 (32-bit)\n");
+    vga_write("Dispositivo  : BIOS\n");
+    vga_write("\n");
+    vga_write("Bienvenido a ChiquiOS\n");
+    vga_write("Escribe 'help' para ver los comandos disponibles.\n\n");
+}
 
-static int same(const char *a, const char *b) {
-    while (*a && *b && *a == *b) {
+static int text_equal(const char *a, const char *b)
+{
+    while (*a && *b) {
+        if (*a != *b) return 0;
         a++;
         b++;
     }
-
-    return *a == '\0' && *b == '\0';
+    return *a == *b;
 }
 
-static void show_help(void) {
-    vga_write("ChiquiOS 0.4 - Commands\n");
-    vga_write("----------------------\n");
-    vga_write("help  - Show commands\n");
-    vga_write("clear - Clear screen\n");
-    vga_write("about - System information\n");
-    vga_write("cpu   - Detect CPU vendor\n");
-    vga_write("mem   - Memory information\n");
-    vga_write("pci   - Scan PCI devices\n");
-    vga_write("usb   - Scan USB controllers\n");
-    vga_write("disks - Disk controller status\n");
-    vga_write("reboot - Reboot system (planned)\n");
+static void show_help(void)
+{
+    vga_write("Comandos disponibles:\n");
+    vga_write("  help     - Muestra esta ayuda\n");
+    vga_write("  clear    - Limpia la pantalla\n");
+    vga_write("  about    - Informacion de ChiquiOS\n");
+    vga_write("  cpu      - Detecta el procesador\n");
+    vga_write("  pci      - Explora dispositivos PCI\n");
+    vga_write("  usb      - Busca controladores USB PCI\n");
+    vga_write("  version  - Muestra la version\n");
+    vga_write("  reboot   - Reinicia el sistema\n");
 }
 
-static void execute(const char *cmd) {
-    if (same(cmd, "help")) {
-        show_help();
+static void reboot_system(void)
+{
+    vga_write("Reiniciando ChiquiOS...\n");
 
-    } else if (same(cmd, "clear")) {
-        vga_clear();
+    __asm__ volatile ("cli");
 
-    } else if (same(cmd, "about")) {
-        vga_write("ChiquiOS 0.4\n");
-        vga_write("Custom 32-bit x86 operating system\n");
-        vga_write("Architecture: i386\n");
-        vga_write("Mode: CLI\n");
-        vga_write("Boot: Custom BIOS bootloader\n");
+    for (;;) {
+        u8 good = 0x02;
 
-    } else if (same(cmd, "cpu")) {
-        cpu_detect();
+        while (good & 0x02) {
+            __asm__ volatile ("inb $0x64, %0" : "=a"(good));
+        }
 
-    } else if (same(cmd, "mem")) {
-        vga_write("Memory information\n");
-        vga_write("RAM detection: not implemented yet.\n");
-
-    } else if (same(cmd, "pci")) {
-        pci_scan_all();
-
-    } else if (same(cmd, "usb")) {
-        pci_scan_usb();
-
-    } else if (same(cmd, "disks")) {
-        vga_write("Disk controller information\n");
-        vga_write("IDE/ATA driver: not implemented.\n");
-        vga_write("SATA/AHCI driver: not implemented.\n");
-        vga_write("Disk reading: not implemented.\n");
-
-    } else if (same(cmd, "reboot")) {
-        vga_write("Reboot is not implemented yet.\n");
-
-    } else if (*cmd) {
-        vga_write("Unknown command. Type help.\n");
+        __asm__ volatile ("outb %0, $0x64" : : "a"((u8)0xFE));
     }
 }
 
-void shell_run(void) {
-    for (;;) {
-        u32 n = 0;
+void shell_run(void)
+{
+    char input[80];
+    unsigned int length;
 
-        vga_write("chiquios> ");
+    print_banner();
+
+    for (;;) {
+        length = 0;
+        vga_write("chiquios@chiquios:~$ ");
 
         for (;;) {
-            char ch = keyboard_read_char();
+            char c = keyboard_read_char();
 
-            if (ch == '\n') {
+            if (c == 0) {
+                continue;
+            }
+
+            if (c == '\n' || c == '\r') {
                 vga_put_char('\n');
-                line[n] = '\0';
+                input[length] = '\0';
                 break;
             }
 
-            if (ch == '\b') {
-                if (n > 0) {
-                    n--;
+            if (c == '\b') {
+                if (length > 0) {
+                    length--;
                     vga_put_char('\b');
                 }
                 continue;
             }
 
-            if (ch >= 32 && ch <= 126) {
-                if (n < sizeof(line) - 1) {
-                    line[n++] = ch;
-                    vga_put_char(ch);
-                }
+            if (c >= 32 && c <= 126 && length < sizeof(input) - 1) {
+                input[length++] = c;
+                vga_put_char(c);
             }
         }
 
-        execute(line);
+        if (text_equal(input, "help")) {
+            show_help();
+        } else if (text_equal(input, "clear")) {
+            vga_clear();
+        } else if (text_equal(input, "about")) {
+            vga_write("ChiquiOS 0.4: sistema propio x86 de 32 bits.\n");
+            vga_write("Kernel independiente, shell CLI y arranque BIOS.\n");
+        } else if (text_equal(input, "version")) {
+            vga_write("ChiquiOS 0.4 (x86, 32-bit)\n");
+        } else if (text_equal(input, "cpu")) {
+            cpu_detect();
+        } else if (text_equal(input, "pci")) {
+            pci_scan_all();
+        } else if (text_equal(input, "usb")) {
+            pci_scan_usb();
+        } else if (text_equal(input, "reboot")) {
+            reboot_system();
+        } else if (length == 0) {
+            /* No hacer nada si se pulsa Enter sin escribir. */
+        } else {
+            vga_write("Comando desconocido. Escribe 'help'.\n");
+        }
     }
 }
