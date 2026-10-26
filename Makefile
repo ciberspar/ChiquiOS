@@ -3,6 +3,7 @@ BUILD := build
 ISO := $(BUILD)/chiquios.iso
 BOOTIMG := $(BUILD)/iso/boot.img
 BOOT_CD := $(BUILD)/boot_cd.bin
+
 KERNEL_SIZE := 16384
 DISK_SIZE := 16896
 
@@ -17,13 +18,14 @@ CFLAGS := -m32 -march=i386 -ffreestanding -fno-pie -fno-pic \
 
 LDFLAGS := -m elf_i386 -T kernel/linker.ld
 
-ASM_SOURCES := kernel/entry.asm
 C_SOURCES := \
 	kernel/kernel.c \
 	kernel/drivers/vga.c \
 	kernel/drivers/cpu.c \
 	kernel/drivers/keyboard_ps2.c \
+	kernel/drivers/keyboard_usb.c \
 	kernel/drivers/pci.c \
+	kernel/drivers/usb.c \
 	kernel/shell/shell.c
 
 ASM_OBJECTS := $(BUILD)/entry.o
@@ -40,7 +42,7 @@ $(BUILD):
 $(BUILD)/entry.o: kernel/entry.asm | $(BUILD)
 	$(AS) -f elf32 $< -o $@
 
-$(BUILD)/%.o: kernel/%.c | $(BUILD)
+$(BUILD)/%.o: kernel/%.c
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
