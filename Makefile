@@ -17,6 +17,7 @@ KERNEL_OBJS = \
 	$(BUILD)/cpu.o \
 	$(BUILD)/vga.o \
 	$(BUILD)/keyboard_ps2.o \
+	$(BUILD)/pci.o \
 	$(BUILD)/shell.o
 
 .PHONY: all check clean
@@ -43,6 +44,9 @@ $(BUILD)/vga.o: kernel/drivers/vga.c kernel/include/drivers.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/keyboard_ps2.o: kernel/drivers/keyboard_ps2.c kernel/include/drivers.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/pci.o: kernel/drivers/pci.c kernel/include/drivers.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/shell.o: kernel/shell/shell.c kernel/include/drivers.h | $(BUILD)
