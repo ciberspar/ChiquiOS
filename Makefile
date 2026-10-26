@@ -77,7 +77,6 @@ check: $(BUILD)/chiquios.img
 clean:
 	rm -rf $(BUILD)
 
-
 ISO := build/chiquios.iso
 BOOTIMG := build/iso/boot.img
 
@@ -87,4 +86,9 @@ iso: $(BUILD)/chiquios.img
 	mkdir -p build/iso
 	dd if=/dev/zero of=$(BOOTIMG) bs=512 count=2880
 	dd if=$(BUILD)/chiquios.img of=$(BOOTIMG) conv=notrunc
-	xorriso -as mkisofs -o $(ISO) -b boot.img -c boot.cat build/iso
+	xorriso -as mkisofs \
+		-o $(ISO) \
+		-b boot.img \
+		-c boot.cat \
+		-boot-load-size 4 \
+		build/iso
