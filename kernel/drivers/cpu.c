@@ -1,29 +1,27 @@
 
 #include "../include/drivers.h"
 
-static void cpuid(
-    uint32_t leaf,
-    uint32_t *a,
-    uint32_t *b,
-    uint32_t *c,
-    uint32_t *d
-) {
-    __asm__ volatile (
-        "cpuid"
-        : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d)
-        : "a"(leaf), "c"(0)
-    );
-}
-
 void cpu_detect(void) {
-    uint32_t a, b, c, d;
+    u32 a, b, c, d;
+    char vendor[13];
 
-    cpuid(0, &a, &b, &c, &d);
+    __asm__ volatile (
+        "pushl %%ebx\n\t"
+        "cpuid\n\t"
+        "movl %%ebx, %1\n\t"
+        "movl %%edx, %2\n\t"
+        "movl %%ecx, %3\n\t"
+        "popl %%ebx"
+        : "=a"(a), "=m"(*(u32 *)&vendor[0]),
+          "=m"(*(u32 *)&vendor[4]),
+          "=m"(*(u32 *)&vendor[8])
+        : "a"(0)
+        : "ecx", "edx", "memory"
+    );
 
-    /* El kernel sigue siendo x86 de 32 bits.
-       La detección detallada se mostrará más adelante. */
-    (void)a;
-    (void)b;
-    (void)c;
-    (void)d;
+    vendor[12] = '\0';
+
+    vga_write("CPU vendor: ");
+    vga_write(vendor);
+    vga_write("\n");
 }
