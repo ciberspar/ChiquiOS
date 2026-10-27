@@ -29,6 +29,8 @@ C_SOURCES := \
 	kernel/drivers/usb.c \
 	kernel/drivers/internet.c \
 	kernel/shell/shell.c
+  	kernel/ui/tui.c \
+	kernel/pkg/bacus.c
 
 ASM_OBJECTS := $(BUILD)/entry.o
 C_OBJECTS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(C_SOURCES))
