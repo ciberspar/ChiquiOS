@@ -1,11 +1,18 @@
 
-name: Build ChiquiOS 0.4 ISO
+name: Build ChiquiOS 0.5 ISO
 
 on:
   push:
     branches:
       - main
+      - pruebas
   workflow_dispatch:
+    inputs:
+      import_real_drivers:
+        description: "Descargar fuentes externas de controladores"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,7 +21,7 @@ jobs:
   build:
     name: Build ChiquiOS x86 BIOS
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
       - name: Download repository
@@ -29,12 +36,23 @@ jobs:
             binutils \
             make \
             xorriso \
-            file
+            file \
+            git
+
+      - name: Download external driver sources
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.import_real_drivers }}
+        continue-on-error: true
+        run: |
+          if [ -f tools/import-drivers.sh ]; then
+            bash tools/import-drivers.sh
+          else
+            echo "Import script not found; skipping."
+          fi
 
       - name: Clean previous build
         run: make clean
 
-      - name: Compile ChiquiOS
+      - name: Compile ChiquiOS own kernel and bootloader
         run: make
 
       - name: Check kernel and disk image
@@ -45,24 +63,27 @@ jobs:
 
       - name: Verify generated images
         run: |
-          test -f build/chiquios.img
-          test -f build/chiquios.iso
-          test -f build/boot_cd.bin
-          test -f build/iso/boot.img
+          set -eu
+          test -s build/chiquios.img
+          test -s build/chiquios.iso
+          test -s build/boot_cd.bin
+          test -s build/iso/boot.img
           file build/chiquios.img
           file build/chiquios.iso
-          ls -lh build/chiquios.img build/chiquios.iso
+          ls -lh \
+            build/chiquios.img \
+            build/chiquios.iso
 
       - name: Upload disk image
         uses: actions/upload-artifact@v4
         with:
-          name: ChiquiOS-0.4-Disk
+          name: ChiquiOS-0.5-Disk
           path: build/chiquios.img
           if-no-files-found: error
 
       - name: Upload bootable CD/DVD ISO
         uses: actions/upload-artifact@v4
         with:
-          name: ChiquiOS-0.4-ISO
+          name: ChiquiOS-0.5-ISO
           path: build/chiquios.iso
           if-no-files-found: error
