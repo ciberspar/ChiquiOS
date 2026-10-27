@@ -1,6 +1,7 @@
 
 #include "include/drivers.h"
 #include "include/supervisor.h"
+#include "tui.h"
 
 void kernel_main(void)
 {
@@ -12,14 +13,12 @@ void kernel_main(void)
     vga_write("================================\n\n");
 
     cpu_detect();
-
     supervisor_initialize();
 
     vga_write("Supervisor: inicializado\n");
-    vga_write("Teclado PS/2: modo de consulta\n");
-    vga_write("Escribe help para ver los comandos.\n");
+    vga_write("Iniciando interfaz de texto...\n");
 
-    shell_run();
+    tui_run();
 
     for (;;) {
         __asm__ volatile ("hlt");
