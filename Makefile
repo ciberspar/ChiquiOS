@@ -28,7 +28,7 @@ C_SOURCES := \
 	kernel/drivers/pci.c \
 	kernel/drivers/usb.c \
 	kernel/drivers/internet.c \
-	kernel/shell/shell.c
+	kernel/shell/shell.c \
   	kernel/ui/tui.c \
 	kernel/pkg/bacus.c
 
