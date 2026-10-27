@@ -20,14 +20,15 @@ LDFLAGS := -m elf_i386 -T kernel/linker.ld
 
 C_SOURCES := \
 	kernel/kernel.c \
+	kernel/supervisor/supervisor.c \
 	kernel/drivers/vga.c \
 	kernel/drivers/cpu.c \
 	kernel/drivers/keyboard_ps2.c \
 	kernel/drivers/keyboard_usb.c \
 	kernel/drivers/pci.c \
 	kernel/drivers/usb.c \
+	kernel/drivers/internet.c \
 	kernel/shell/shell.c
-  kernel/drivers/internet.c \
 
 ASM_OBJECTS := $(BUILD)/entry.o
 C_OBJECTS := $(patsubst kernel/%.c,$(BUILD)/%.o,$(C_SOURCES))
