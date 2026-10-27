@@ -51,4 +51,8 @@ void wifi_list_devices(void);
 void shell_run(void);
 void kernel_main(void);
 
+/* internet */ 
+void internet_initialize(void);
+void internet_list_devices(void);
+
 #endif
