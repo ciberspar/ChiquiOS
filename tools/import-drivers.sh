@@ -1,50 +1,57 @@
 
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
-# ChiquiOS - Driver source importer
-# No modifica kernel/drivers: guarda las fuentes aparte.
-
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-DEST="$ROOT/kernel/drivers-real"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEST="$ROOT/kernel/drivers/drivers-reales"
 
 mkdir -p "$DEST"
 
-clone_or_update() {
-    name="$1"
-    url="$2"
-    target="$DEST/$name"
+command -v git >/dev/null 2>&1 || {
+    echo "Error: Git no está instalado."
+    exit 1
+}
+
+clone_sparse() {
+    local name="$1"
+    local url="$2"
+    shift 2
+    local target="$DEST/$name"
 
     if [ -d "$target/.git" ]; then
         echo "Actualizando $name..."
         git -C "$target" pull --ff-only
     else
-        echo "Descargando fuentes de $name..."
-        git clone --depth 1 "$url" "$target"
+        echo "Descargando estructura de $name..."
+        git clone --depth 1 --filter=blob:none --sparse \
+            "$url" "$target"
     fi
+
+    git -C "$target" sparse-checkout set "$@"
+    echo "Listo: $name"
 }
 
-command -v git >/dev/null 2>&1 || {
-    echo "Error: instala Git para importar las fuentes."
-    exit 1
-}
+clone_sparse linux \
+    https://github.com/torvalds/linux.git \
+    drivers
 
-clone_or_update linux \
-    https://github.com/torvalds/linux.git
+clone_sparse freebsd \
+    https://github.com/freebsd/freebsd-src.git \
+    sys/dev sys/net
 
-clone_or_update netbsd \
-    https://github.com/NetBSD/src.git
+clone_sparse netbsd \
+    https://github.com/NetBSD/src.git \
+    sys/dev sys/net
 
-clone_or_update freebsd \
-    https://github.com/freebsd/freebsd-src.git
+clone_sparse haiku \
+    https://github.com/haiku/haiku.git \
+    src/add-ons/kernel/drivers
 
-clone_or_update haiku \
-    https://github.com/haiku/haiku.git
-
-clone_or_update redox \
-    https://github.com/redox-os/redox.git
+clone_sparse redox \
+    https://github.com/redox-os/redox.git \
+    drivers
 
 echo
-echo "Fuentes descargadas."
-echo "Ubicación: $DEST"
-echo "No se han integrado ni compilado los controladores."
+echo "Importación terminada."
+echo "Ruta: kernel/drivers/drivers-reales/"
+echo "Aviso: las fuentes aún no están adaptadas al kernel de ChiquiOS."
