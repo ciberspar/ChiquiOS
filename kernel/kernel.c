@@ -1,17 +1,23 @@
 
 #include "include/drivers.h"
+#include "include/supervisor.h"
 
-void kernel_main(void) {
+void kernel_main(void)
+{
     vga_initialize();
 
     vga_write("================================\n");
-    vga_write("          ChiquiOS 0.2\n");
-    vga_write("     32-bit x86 CLI system\n");
+    vga_write("          ChiquiOS 0.5\n");
+    vga_write("       Kernel propio x86\n");
     vga_write("================================\n\n");
 
     cpu_detect();
-    vga_write("PS/2 keyboard: polling mode\n");
-    vga_write("Type help to see commands.\n\n");
+
+    supervisor_initialize();
+
+    vga_write("Supervisor: inicializado\n");
+    vga_write("Teclado PS/2: modo de consulta\n");
+    vga_write("Escribe help para ver los comandos.\n");
 
     shell_run();
 
