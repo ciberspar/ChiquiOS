@@ -1,7 +1,7 @@
 
 #include "include/drivers.h"
 #include "include/supervisor.h"
-#include "include/tui.h"
+#include "tui.h"
 
 void kernel_main(void)
 {
