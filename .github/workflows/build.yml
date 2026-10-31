@@ -34,6 +34,14 @@ jobs:
       - name: Comprobar imagen
         run: make check
 
+      - name: Verificar arquitectura del kernel
+        run: |
+          readelf -h build/kernel.elf
+          readelf -h build/kernel.elf | grep -q "ELF32"
+          readelf -h build/kernel.elf | grep -q "Intel 80386"
+          nm build/kernel.elf | grep -q " T _start"
+          nm build/kernel.elf | grep -q " T kernel_main"
+
       - name: Comprobar arranque BIOS con QEMU
         timeout-minutes: 1
         run: |
