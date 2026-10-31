@@ -1,3 +1,4 @@
+
 name: Build ChiquiOS
 
 on:
@@ -12,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Build ChiquiOS i386 BIOS
+    name: Build i386 and x86-64
     runs-on: ubuntu-22.04
     timeout-minutes: 30
 
@@ -25,24 +26,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nasm gcc binutils make qemu-system-x86
 
-      - name: Limpiar compilación anterior
+      - name: Limpiar compilaciones anteriores
         run: make clean
 
-      - name: Compilar ChiquiOS
-        run: make
+      # i386
+      - name: Compilar ChiquiOS i386
+        run: make ARCH=i386
 
-      - name: Comprobar imagen
-        run: make check
-
-      - name: Verificar arquitectura del kernel
+      - name: Verificar kernel i386
         run: |
+          make ARCH=i386 check
           readelf -h build/kernel.elf
           readelf -h build/kernel.elf | grep -q "ELF32"
           readelf -h build/kernel.elf | grep -q "Intel 80386"
           nm build/kernel.elf | grep -q " T _start"
           nm build/kernel.elf | grep -q " T kernel_main"
 
-      - name: Comprobar arranque BIOS con QEMU
+      - name: Comprobar arranque BIOS i386 con QEMU
         timeout-minutes: 1
         run: |
           timeout 20s qemu-system-i386 \
@@ -56,9 +56,30 @@ jobs:
             -no-reboot \
             -no-shutdown || test $? -eq 124
 
-      - name: Publicar imagen
+      # x86-64
+      - name: Compilar ChiquiOS x86-64
+        run: make ARCH=x86_64
+
+      - name: Verificar kernel x86-64
+        run: |
+          make ARCH=x86_64 check
+          readelf -h build/x86_64/kernel.elf
+          readelf -h build/x86_64/kernel.elf | grep -q "ELF64"
+          readelf -h build/x86_64/kernel.elf | grep -q "Advanced Micro Devices X86-64"
+          nm build/x86_64/kernel.elf | grep -q " T _start"
+          nm build/x86_64/kernel.elf | grep -q " T kernel_main"
+
+      # Artefactos
+      - name: Publicar imagen i386 BIOS
         uses: actions/upload-artifact@v4
         with:
           name: ChiquiOS-i386-BIOS
           path: build/chiquios.img
+          if-no-files-found: error
+
+      - name: Publicar kernel x86-64
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiquiOS-x86_64-ELF
+          path: build/x86_64/kernel.elf
           if-no-files-found: error
