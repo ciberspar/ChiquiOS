@@ -1,6 +1,7 @@
 
 #include "../include/drivers.h"
 #include "../include/supervisor.h"
+#include "../core/memory_monitor.h"
 
 static int text_equal(const char *a, const char *b)
 {
@@ -14,15 +15,16 @@ static int text_equal(const char *a, const char *b)
 
 static void show_help(void)
 {
-    vga_write("Comandos de ChiquiOS 0.5:\n");
+    vga_write("Comandos de ChiquiOS:\n");
     vga_write("  help              Ayuda\n");
     vga_write("  clear             Limpiar pantalla\n");
     vga_write("  about             Informacion del sistema\n");
     vga_write("  version           Version del kernel\n");
     vga_write("  cpu               Informacion de CPU\n");
+    vga_write("  memory            Monitor de memoria RAM\n");
     vga_write("  pci               Explorar PCI\n");
     vga_write("  usb               Explorar controladores USB PCI\n");
-    vga_write("  services          Listar servicios registrados\n");
+    vga_write("  services          Listar servicios\n");
     vga_write("  restart usb       Reinicializar USB\n");
     vga_write("  restart internet  Reinicializar red\n");
     vga_write("  reboot            Reiniciar equipo\n");
@@ -38,9 +40,8 @@ static void reboot_system(void)
 
         __asm__ volatile ("inb $0x64, %0" : "=a"(status));
 
-        if ((status & 0x02) == 0) {
+        if ((status & 0x02) == 0)
             __asm__ volatile ("outb %0, $0x64" : : "a"((u8)0xFE));
-        }
     }
 }
 
@@ -49,7 +50,7 @@ void shell_run(void)
     char input[80];
     unsigned int length;
 
-    vga_write("\nChiquiOS 0.5 - CLI\n");
+    vga_write("\nChiquiOS - CLI\n");
     vga_write("Escribe help para comenzar.\n\n");
 
     for (;;) {
@@ -88,11 +89,12 @@ void shell_run(void)
             vga_clear();
         } else if (text_equal(input, "about")) {
             vga_write("ChiquiOS: kernel propio x86 de 32 bits.\n");
-            vga_write("Arranque BIOS y shell de texto.\n");
         } else if (text_equal(input, "version")) {
             vga_write("ChiquiOS 0.5\n");
         } else if (text_equal(input, "cpu")) {
             cpu_detect();
+        } else if (text_equal(input, "memory")) {
+            memory_monitor_print();
         } else if (text_equal(input, "pci")) {
             pci_scan_all();
         } else if (text_equal(input, "usb")) {
