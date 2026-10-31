@@ -29,7 +29,10 @@ jobs:
       - name: Limpiar compilaciones anteriores
         run: make clean
 
-      # i386
+      # ==============================================
+      # i386 BIOS
+      # ==============================================
+
       - name: Compilar ChiquiOS i386
         run: make ARCH=i386
 
@@ -56,7 +59,10 @@ jobs:
             -no-reboot \
             -no-shutdown || test $? -eq 124
 
+      # ==============================================
       # x86-64
+      # ==============================================
+
       - name: Compilar ChiquiOS x86-64
         run: make ARCH=x86_64
 
@@ -68,8 +74,12 @@ jobs:
           readelf -h build/x86_64/kernel.elf | grep -q "Advanced Micro Devices X86-64"
           nm build/x86_64/kernel.elf | grep -q " T _start"
           nm build/x86_64/kernel.elf | grep -q " T kernel_main"
+          test -s build/x86_64/kernel.bin
 
+      # ==============================================
       # Artefactos
+      # ==============================================
+
       - name: Publicar imagen i386 BIOS
         uses: actions/upload-artifact@v4
         with:
@@ -80,6 +90,8 @@ jobs:
       - name: Publicar kernel x86-64
         uses: actions/upload-artifact@v4
         with:
-          name: ChiquiOS-x86_64-ELF
-          path: build/x86_64/kernel.elf
+          name: ChiquiOS-x86_64
+          path: |
+            build/x86_64/kernel.elf
+            build/x86_64/kernel.bin
           if-no-files-found: error
