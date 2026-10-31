@@ -46,9 +46,9 @@ read_kernel:
     je kernel_loaded
 
     mov ax, [remaining]
-    cmp ax, 127
+    cmp ax, 32
     jbe read_chunk
-    mov ax, 127
+    mov ax, 32
 
 read_chunk:
     mov [chunk_count], ax
