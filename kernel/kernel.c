@@ -9,7 +9,6 @@
 #include "include/drivers.h"
 #include "include/supervisor.h"
 
-#include "drivers/vga.h"
 #include "drivers/serial.h"
 
 #include "arch/x86_64/gdt.h"
