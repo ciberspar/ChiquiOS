@@ -31,8 +31,9 @@ chiquios_status_t driver_register(
     u16 device_id
 );
 
-void driver_manager_list(void);
+const driver_info_t *driver_find(u16 vendor_id, u16 device_id);
 
+void driver_manager_list(void);
 u32 driver_manager_count(void);
 
 #endif
