@@ -2,6 +2,7 @@
 #include "../include/tui.h"
 #include "../include/drivers.h"
 #include "../include/supervisor.h"
+#include "../core/memory_monitor.h"
 
 void tui_run(void)
 {
@@ -9,6 +10,7 @@ void tui_run(void)
 
     for (;;) {
         vga_clear();
+
         vga_write("================================\n");
         vga_write("         ChiquiOS 0.5\n");
         vga_write("       Centro del sistema\n");
@@ -18,8 +20,9 @@ void tui_run(void)
         vga_write("2. Explorar dispositivos PCI\n");
         vga_write("3. Ver controladores USB\n");
         vga_write("4. Ver servicios\n");
-        vga_write("5. Abrir terminal\n");
-        vga_write("6. Instalador (proximamente)\n");
+        vga_write("5. Monitor de memoria RAM\n");
+        vga_write("6. Abrir terminal\n");
+        vga_write("7. Instalador (proximamente)\n");
         vga_write("\nSelecciona una opcion: ");
 
         key = keyboard_read_char();
@@ -44,12 +47,15 @@ void tui_run(void)
             break;
 
         case '5':
-            shell_run();
+            memory_monitor_print();
             break;
 
         case '6':
+            shell_run();
+            break;
+
+        case '7':
             vga_write("El instalador aun no puede escribir en disco.\n");
-            vga_write("Primero necesitamos implementar almacenamiento.\n");
             break;
 
         default:
