@@ -1,8 +1,8 @@
 
 #include "exceptions.h"
-#include "idt.h"
-#include "../../include/drivers.h"
+
 #include "../../core/arch.h"
+#include "../../drivers/vga.h"
 
 static const char *exception_names[32] = {
     "Division Error",
@@ -35,11 +35,11 @@ static const char *exception_names[32] = {
     "Reserved",
     "Hypervisor Injection",
     "VMM Communication",
-    "Security",
+    "Security Exception",
     "Reserved"
 };
 
-void exception_handler(u64 vector, u64 error_code)
+void exception_dispatch(u64 vector, u64 error_code)
 {
     arch_disable_interrupts();
 
@@ -48,25 +48,25 @@ void exception_handler(u64 vector, u64 error_code)
     vga_write("       CHIQUIOS CPU EXCEPTION\n");
     vga_write("================================\n");
 
-    if (vector < 32) {
+    if (vector < 32)
         vga_write(exception_names[vector]);
-    } else {
+    else
         vga_write("Unknown exception");
+
+    vga_write("\nError code: ");
+
+    static const char hex[] = "0123456789ABCDEF";
+
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        char c[2] = {
+            hex[(error_code >> shift) & 0xF],
+            '\0'
+        };
+        vga_write(c);
     }
 
-    vga_write("\nKernel halted for safety.\n");
+    vga_write("\nChiquiOS detenido por seguridad.\n");
 
-    (void)error_code;
-
-    for (;;) {
+    for (;;)
         arch_halt();
-    }
-}
-
-void exceptions_initialize(void)
-{
-    /*
-     * Los handlers individuales se conectarán
-     * cuando esté lista la tabla de stubs ASM.
-     */
 }
