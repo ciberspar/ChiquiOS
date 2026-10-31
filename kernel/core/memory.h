@@ -20,7 +20,7 @@ typedef struct {
 } __attribute__((packed)) memory_region_t;
 
 typedef struct {
-    u32 regions_address;
+    uptr regions_address;
     u32 count;
 } memory_map_t;
 
