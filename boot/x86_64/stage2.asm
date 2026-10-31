@@ -1,4 +1,3 @@
-
 BITS 16
 ORG 0x8000
 
@@ -29,6 +28,10 @@ start:
 
     mov [boot_drive], dl
 
+    ; Comprobar CPUID y soporte de Long Mode.
+    call check_cpu
+    jc cpu_error
+
     ; Obtener mapa de memoria BIOS E820.
     call collect_memory
     jc memory_error
@@ -48,10 +51,16 @@ read_kernel:
     mov ax, 127
 
 read_chunk:
+    mov [chunk_count], ax
     mov [dap_count], ax
 
     mov ax, [destination_segment]
     mov [dap_segment], ax
+
+    ; Actualizar LBA del paquete de lectura.
+    mov eax, [current_lba]
+    mov [dap_lba], eax
+    mov dword [dap_lba + 4], 0
 
     mov si, disk_packet
     mov dl, [boot_drive]
@@ -59,7 +68,8 @@ read_chunk:
     int 0x13
     jc disk_error
 
-    mov ax, [dap_count]
+    ; Usar nuestro contador, no el que pueda modificar la BIOS.
+    mov ax, [chunk_count]
     sub [remaining], ax
 
     ; Avanzar destino: 32 parrafos por sector.
@@ -67,7 +77,7 @@ read_chunk:
     add [destination_segment], ax
 
     ; Avanzar LBA.
-    movzx eax, word [dap_count]
+    movzx eax, word [chunk_count]
     add [current_lba], eax
 
     jmp read_kernel
@@ -85,6 +95,52 @@ kernel_loaded:
     mov cr0, eax
 
     jmp dword 0x08:protected_entry
+
+; --------------------------------------------------
+; Comprobar CPUID y soporte de Long Mode
+; --------------------------------------------------
+
+check_cpu:
+    ; Comprobar si existe CPUID mediante el bit ID.
+    pushfd
+    pop eax
+
+    mov ecx, eax
+    xor eax, 1 << 21
+
+    push eax
+    popfd
+
+    pushfd
+    pop eax
+
+    push ecx
+    popfd
+
+    xor eax, ecx
+    test eax, 1 << 21
+    jz .cpu_not_supported
+
+    ; Consultar hojas extendidas disponibles.
+    mov eax, 0x80000000
+    cpuid
+
+    cmp eax, 0x80000001
+    jb .cpu_not_supported
+
+    ; Comprobar bit Long Mode (EDX bit 29).
+    mov eax, 0x80000001
+    cpuid
+
+    test edx, 1 << 29
+    jz .cpu_not_supported
+
+    clc
+    ret
+
+.cpu_not_supported:
+    stc
+    ret
 
 ; --------------------------------------------------
 ; BIOS E820
@@ -173,10 +229,12 @@ setup_paging:
     rep stosd
 
     ; PML4[0] -> PDPT.
-    mov dword [0x70000], 0x71003
+    mov edi, 0x70000
+    mov dword [es:edi], 0x71003
 
     ; PDPT[0] -> PD.
-    mov dword [0x71000], 0x72003
+    mov edi, 0x71000
+    mov dword [es:edi], 0x72003
 
     ; 512 entradas de 2 MiB = 1 GiB.
     mov edi, 0x72000
@@ -195,6 +253,10 @@ setup_paging:
 ; --------------------------------------------------
 ; Errores BIOS
 ; --------------------------------------------------
+
+cpu_error:
+    mov si, cpu_message
+    jmp print_error
 
 memory_error:
     mov si, memory_message
@@ -223,11 +285,15 @@ halt_error:
 ; --------------------------------------------------
 
 boot_drive db 0
+
 remaining dw 0
+chunk_count dw 0
 destination_segment dw 0
+
 e820_count dw 0
 current_lba dd 0
 
+cpu_message db 'ChiquiOS: CPU no compatible', 0
 memory_message db 'ChiquiOS: E820 error', 0
 disk_message db 'ChiquiOS: kernel read error', 0
 
@@ -236,11 +302,15 @@ align 4
 disk_packet:
     db 0x10
     db 0
+
 dap_count:
     dw 1
+
     dw 0
+
 dap_segment:
     dw 0x1000
+
 dap_lba:
     dq 0
 
