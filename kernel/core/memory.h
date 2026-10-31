@@ -1,8 +1,8 @@
-
 #ifndef CHIQUIOS_CORE_MEMORY_H
 #define CHIQUIOS_CORE_MEMORY_H
 
 #include "types.h"
+#include "arch_config.h"
 
 #define MEMORY_MAX_REGIONS 64
 
@@ -11,6 +11,12 @@
 #define MEMORY_TYPE_ACPI_RECLAIM 3
 #define MEMORY_TYPE_ACPI_NVS     4
 #define MEMORY_TYPE_BAD          5
+
+#if CHIQUIOS_BUILD_X86_64
+#define MEMORY_MANAGED_LIMIT (16ULL * 1024ULL * 1024ULL * 1024ULL)
+#else
+#define MEMORY_MANAGED_LIMIT 0x100000000ULL
+#endif
 
 typedef struct {
     u64 base;
