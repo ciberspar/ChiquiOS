@@ -1,57 +1,49 @@
 
 #include "core/types.h"
-#include "core/memory.h"
-#include "core/pmm.h"
-#include "core/driver_manager.h"
 #include "core/arch.h"
 #include "core/arch_config.h"
+#include "core/boot_info.h"
 
 #include "include/drivers.h"
-#include "include/supervisor.h"
-
 #include "drivers/serial.h"
-
-#include "arch/x86_64/gdt.h"
 
 static void kernel_panic(const char *message)
 {
     arch_disable_interrupts();
 
     vga_clear();
-    vga_write_string("\n");
-    vga_write_string("================================\n");
-    vga_write_string("       CHIQUIOS - KERNEL PANIC\n");
-    vga_write_string("================================\n");
-    vga_write_string(message);
-    vga_write_string("\nSistema detenido.\n");
+    vga_write("\n");
+    vga_write("================================\n");
+    vga_write("       CHIQUIOS - KERNEL PANIC\n");
+    vga_write("================================\n");
+    vga_write(message);
+    vga_write("\nSistema detenido.\n");
 
-    if (serial_is_initialized())
-    {
+    if (serial_is_initialized()) {
         serial_write_string("[PANIC] ");
         serial_write_string(message);
         serial_write_string("\n");
     }
 
-    for (;;)
+    for (;;) {
         arch_halt();
+    }
 }
 
 static void kernel_log(const char *message)
 {
-    vga_write_string("[ChiquiOS] ");
-    vga_write_string(message);
-    vga_write_string("\n");
+    vga_write("[ChiquiOS] ");
+    vga_write(message);
+    vga_write("\n");
 
     serial_write_string("[ChiquiOS] ");
     serial_write_string(message);
     serial_write_string("\n");
 }
 
-void kernel_main(void *boot_info)
+void kernel_main(const chiquios_boot_info_t *boot_info)
 {
-    /*
-     * 1. Inicialización de salida.
-     */
+    /* 1. Inicializar salida */
 
     vga_initialize();
     serial_initialize();
@@ -66,105 +58,54 @@ void kernel_main(void *boot_info)
     kernel_panic("Arquitectura no compatible");
 #endif
 
-    /*
-     * 2. Validación del cargador.
-     */
+    /* 2. Comprobar informacion de arranque */
 
-    if (boot_info == 0)
+    if (boot_info == 0) {
         kernel_panic("Boot information inexistente");
+    }
 
     kernel_log("Boot information recibida");
 
-    /*
-     * 3. Arquitectura.
-     *
-     * El cargador ya debe haber establecido el modo
-     * de CPU correspondiente antes de entrar aquí.
-     */
-
-#if CHIQUIOS_BUILD_X86_64
-    kernel_log("Ejecutando en modo x86-64");
-#endif
-
-    /*
-     * 4. Memoria física.
-     *
-     * El formato de boot_info debe coincidir con
-     * memory_map_t antes de utilizarlo.
-     *
-     * No convertir punteros ni estructuras a ciegas.
-     */
-
-    kernel_log("Inicializando memoria");
-
-    /*
-     * La conversión del mapa del cargador a memory_map_t
-     * se integrará cuando se unifique el protocolo de arranque.
-     */
-
-    kernel_log("Memoria: inicializacion pendiente de protocolo");
-
-    /*
-     * 5. CPU.
-     */
+    /* 3. Detectar procesador */
 
     kernel_log("Detectando CPU");
-
     cpu_detect();
 
-    /*
-     * 6. PCI.
-     */
+    /* 4. Detectar dispositivos PCI */
 
-    kernel_log("Inicializando PCI");
+    kernel_log("Buscando dispositivos PCI");
+    pci_scan_all();
 
-    pci_scan();
+    /* 5. Detectar controladores USB */
 
-    /*
-     * 7. Drivers.
-     */
+    kernel_log("Buscando controladores USB");
+    pci_scan_usb();
 
-    kernel_log("Inicializando dispositivos");
+    /* 6. Iniciar deteccion de red */
 
-    /*
-     * El gestor de drivers registra dispositivos.
-     * La inicialización individual debe comprobar
-     * el resultado de cada controlador.
-     */
+    kernel_log("Detectando adaptadores de red");
+    internet_initialize();
 
-    /*
-     * 8. Supervisor.
-     */
+    /* 7. Mensaje final */
 
-    kernel_log("Preparando supervisor");
+    kernel_log("Inicializacion basica completada");
 
-    /*
-     * No iniciar servicios que todavía no tengan
-     * inicializadores comprobables.
-     */
+    vga_write("\n");
+    vga_write("================================\n");
+    vga_write("           CHIQUIOS\n");
+    vga_write("================================\n");
 
-    /*
-     * 9. Interfaz.
-     */
-
-    kernel_log("ChiquiOS kernel iniciado");
-
-    vga_write_string("\n");
-    vga_write_string("================================\n");
-    vga_write_string("           CHIQUIOS\n");
-    vga_write_string("================================\n");
-    vga_write_string("Arquitectura: ");
 #if CHIQUIOS_BUILD_X86_64
-    vga_write_string("x86-64\n");
+    vga_write("Arquitectura: x86-64\n");
 #else
-    vga_write_string("i386\n");
+    vga_write("Arquitectura: i386\n");
 #endif
-    vga_write_string("Estado: kernel en ejecucion\n");
 
-    /*
-     * Bucle provisional hasta disponer de scheduler.
-     */
+    vga_write("Estado: kernel en ejecucion\n");
 
-    for (;;)
+    /* Esperar al siguiente subsistema */
+
+    for (;;) {
         arch_halt();
+    }
 }
