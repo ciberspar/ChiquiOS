@@ -1,7 +1,8 @@
+
 #ifndef CHIQUIOS_CORE_TYPES_H
 #define CHIQUIOS_CORE_TYPES_H
 
-/* Enteros de tamaño definido */
+/* Enteros de tamaño fijo */
 
 typedef unsigned char      u8;
 typedef unsigned short     u16;
@@ -13,7 +14,12 @@ typedef signed short       i16;
 typedef signed int         i32;
 typedef signed long long   i64;
 
-/* Tipos para resultados */
+/* Tipos que se adaptan a la arquitectura */
+
+typedef __SIZE_TYPE__ usize;
+typedef __UINTPTR_TYPE__ uptr;
+
+/* Resultados */
 
 typedef i32 chiquios_status_t;
 
