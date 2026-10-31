@@ -56,8 +56,13 @@ typedef char boot_memory_map_size_check[
     (sizeof(memory_map_t) == 16) ? 1 : -1
 ];
 
+typedef char boot_info_method_offset_check[
+    (__builtin_offsetof(chiquios_boot_info_t, boot_method) == 24)
+    ? 1 : -1
+];
+
 typedef char boot_info_arch_offset_check[
-    (__builtin_offsetof(chiquios_boot_info_t, architecture) == 24)
+    (__builtin_offsetof(chiquios_boot_info_t, architecture) == 28)
     ? 1 : -1
 ];
 
