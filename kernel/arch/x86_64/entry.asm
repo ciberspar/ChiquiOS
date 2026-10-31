@@ -1,11 +1,14 @@
+
 BITS 64
 
 section .text
 
 global _start
+
 extern kernel_main
 extern _bss_start
 extern _bss_end
+extern _stack_top
 
 _start:
     cli
@@ -21,10 +24,14 @@ _start:
     xor eax, eax
     rep stosb
 
-    ; Recuperar el argumento.
+    ; Preparar la pila propia.
+    lea rsp, [_stack_top]
+    and rsp, -16
+
+    ; Recuperar boot_info.
     mov rdi, r12
 
-    ; Llamar al kernel.
+    ; Entrar al kernel C.
     call kernel_main
 
 .halt:
