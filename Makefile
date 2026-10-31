@@ -28,7 +28,8 @@ C_SOURCES := \
 	kernel/drivers/usb.c \
 	kernel/drivers/internet.c \
 	kernel/drivers/red/e1000.c \
-	kernel/shell/shell.c \
+	kernel/core/memory_monitor.c \
+  kernel/shell/shell.c \
 	kernel/ui/tui.c \
 	kernel/pkg/bacus.c
 
