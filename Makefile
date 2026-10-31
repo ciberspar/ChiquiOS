@@ -1,3 +1,4 @@
+ARCH ?= i386
 
 BUILD := build
 BOOT_BIN := $(BUILD)/boot.bin
@@ -7,6 +8,10 @@ LD := ld
 AS := nasm
 OBJCOPY := objcopy
 
+ifeq ($(ARCH),i386)
+
+ARCH_SOURCE := kernel/arch/i386/arch.c
+
 CFLAGS := -m32 -march=i386 -ffreestanding -fno-pie -fno-pic \
           -fno-stack-protector -fno-asynchronous-unwind-tables \
           -fno-builtin -Wall -Wextra -O2 \
@@ -14,8 +19,14 @@ CFLAGS := -m32 -march=i386 -ffreestanding -fno-pie -fno-pic \
 
 LDFLAGS := -m elf_i386 -T kernel/linker.ld
 
+else
+
+$(error Arquitectura $(ARCH) todavía no implementada. Usa ARCH=i386)
+
+endif
+
 C_SOURCES := \
-	kernel/arch/i386/arch.c \
+	$(ARCH_SOURCE) \
 	kernel/core/memory.c \
 	kernel/core/pmm.c \
 	kernel/core/driver_manager.c \
@@ -30,7 +41,7 @@ C_SOURCES := \
 	kernel/drivers/internet.c \
 	kernel/drivers/red/e1000.c \
 	kernel/core/memory_monitor.c \
-  kernel/shell/shell.c \
+	kernel/shell/shell.c \
 	kernel/ui/tui.c \
 	kernel/pkg/bacus.c
 
@@ -50,7 +61,7 @@ $(BUILD)/entry.o: kernel/entry.asm | $(BUILD)
 
 $(BUILD)/%.o: kernel/%.c
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD)/kernel.elf: $(OBJECTS) kernel/linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
@@ -84,7 +95,7 @@ $(BUILD)/chiquios.img: boot/boot.asm $(BUILD)/kernel.bin $(BUILD)/kernel.sectors
 check: $(BUILD)/chiquios.img
 	@test "$$(stat -c%s $(BOOT_BIN))" -eq 512
 	@test "$$(stat -c%s $(BUILD)/kernel.bin)" -le 524288
-	@echo "ChiquiOS i386: compilación completada."
+	@echo "ChiquiOS $(ARCH): compilación completada."
 	@echo "Kernel: $$(stat -c%s $(BUILD)/kernel.bin) bytes."
 
 iso:
@@ -93,3 +104,5 @@ iso:
 
 clean:
 	rm -rf $(BUILD)
+
+-include $(C_OBJECTS:.o=.d)
