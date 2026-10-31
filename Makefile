@@ -15,6 +15,7 @@ CFLAGS := -m32 -march=i386 -ffreestanding -fno-pie -fno-pic \
 LDFLAGS := -m elf_i386 -T kernel/linker.ld
 
 C_SOURCES := \
+	kernel/arch/i386/arch.c \
 	kernel/core/memory.c \
 	kernel/core/pmm.c \
 	kernel/core/driver_manager.c \
