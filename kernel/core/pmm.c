@@ -3,13 +3,14 @@
 
 #define PMM_MAX_PAGES 1048576ULL
 #define PMM_STATE_BYTES (PMM_MAX_PAGES / 4ULL)
+#define PMM_PHYSICAL_LIMIT 0x100000000ULL
 
-#define PAGE_FREE     0
-#define PAGE_USED     1
-#define PAGE_RESERVED 2
+#define PAGE_FREE      0
+#define PAGE_USED      1
+#define PAGE_RESERVED  2
+#define PAGE_UNMANAGED 3
 
 static u8 page_states[PMM_STATE_BYTES];
-
 static pmm_stats_t statistics;
 static int initialized;
 
@@ -37,11 +38,20 @@ static void reserve_range(u64 start, u64 end)
     u64 last;
     u64 page;
 
+    if (start >= PMM_PHYSICAL_LIMIT)
+        return;
+
+    if (end > PMM_PHYSICAL_LIMIT)
+        end = PMM_PHYSICAL_LIMIT;
+
     if (end <= start)
         return;
 
     first = start / PMM_PAGE_SIZE;
-    last = (end + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
+    last = end / PMM_PAGE_SIZE;
+
+    if ((end % PMM_PAGE_SIZE) != 0)
+        last++;
 
     if (last > PMM_MAX_PAGES)
         last = PMM_MAX_PAGES;
@@ -69,12 +79,12 @@ chiquios_status_t pmm_initialize(const memory_map_t *map)
     }
 
     for (i = 0; i < PMM_STATE_BYTES; i++)
-        page_states[i] = 0xAA;
+        page_states[i] = 0xFF;
 
-    statistics.total_pages = PMM_MAX_PAGES;
+    statistics.total_pages = 0;
     statistics.free_pages = 0;
     statistics.used_pages = 0;
-    statistics.reserved_pages = PMM_MAX_PAGES;
+    statistics.reserved_pages = 0;
 
     regions = (const memory_region_t *)(uptr)map->regions_address;
 
@@ -89,16 +99,17 @@ chiquios_status_t pmm_initialize(const memory_map_t *map)
             continue;
 
         start = regions[i].base;
+
+        if (start >= PMM_PHYSICAL_LIMIT)
+            continue;
+
         end = start + regions[i].length;
 
         if (end < start)
-            return CHIQUIOS_ERROR;
+            end = PMM_PHYSICAL_LIMIT;
 
-        if (start >= 0x100000000ULL)
-            continue;
-
-        if (end > 0x100000000ULL)
-            end = 0x100000000ULL;
+        if (end > PMM_PHYSICAL_LIMIT)
+            end = PMM_PHYSICAL_LIMIT;
 
         first = (start + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
         last = end / PMM_PAGE_SIZE;
@@ -107,18 +118,21 @@ chiquios_status_t pmm_initialize(const memory_map_t *map)
             last = PMM_MAX_PAGES;
 
         for (page = first; page < last; page++) {
-            if (get_state(page) == PAGE_RESERVED) {
+            if (get_state(page) == PAGE_UNMANAGED) {
                 set_state(page, PAGE_FREE);
+                statistics.total_pages++;
                 statistics.free_pages++;
-                statistics.reserved_pages--;
             }
         }
     }
 
-    /* Reservar los primeros 1 MiB. */
+    if (statistics.free_pages == 0)
+        return CHIQUIOS_ERROR;
+
+    /* Reservar memoria baja. */
     reserve_range(0, 0x100000ULL);
 
-    /* Reservar el kernel completo, incluida su sección BSS. */
+    /* Reservar el kernel y su BSS. */
     reserve_range(
         (u64)(uptr)&_kernel_start,
         (u64)(uptr)&_kernel_end
@@ -138,7 +152,7 @@ u64 pmm_allocate_page(void)
     if (!initialized)
         return 0;
 
-    for (page = 256; page < PMM_MAX_PAGES; page++) {
+    for (page = 0; page < PMM_MAX_PAGES; page++) {
         if (get_state(page) == PAGE_FREE) {
             set_state(page, PAGE_USED);
 
@@ -183,4 +197,9 @@ void pmm_get_stats(pmm_stats_t *stats)
         return;
 
     *stats = statistics;
+}
+
+int pmm_is_initialized(void)
+{
+    return initialized;
 }
