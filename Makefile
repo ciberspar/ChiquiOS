@@ -2,10 +2,8 @@
 BUILD := build
 ISO := $(BUILD)/chiquios.iso
 BOOTIMG := $(BUILD)/iso/boot.img
+BOOT_BIN := $(BUILD)/boot.bin
 BOOT_CD := $(BUILD)/boot_cd.bin
-
-KERNEL_SIZE := 16384
-DISK_SIZE := 16896
 
 CC := gcc
 LD := ld
@@ -14,7 +12,7 @@ OBJCOPY := objcopy
 
 CFLAGS := -m32 -march=i386 -ffreestanding -fno-pie -fno-pic \
           -fno-stack-protector -fno-asynchronous-unwind-tables \
-          -Wall -Wextra -O2 -Ikernel/include
+          -fno-builtin -Wall -Wextra -O2 -Ikernel/include
 
 LDFLAGS := -m elf_i386 -T kernel/linker.ld
 
@@ -29,8 +27,8 @@ C_SOURCES := \
 	kernel/drivers/usb.c \
 	kernel/drivers/internet.c \
 	kernel/shell/shell.c \
-  	kernel/drivers/red/e1000.c \
-  kernel/ui/tui.c \
+	kernel/drivers/red/e1000.c \
+	kernel/ui/tui.c \
 	kernel/pkg/bacus.c
 
 ASM_OBJECTS := $(BUILD)/entry.o
@@ -57,38 +55,47 @@ $(BUILD)/kernel.elf: $(OBJECTS) kernel/linker.ld
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $< $@
 
-$(BUILD)/kernel.padded: $(BUILD)/kernel.bin
-	test "$$(stat -c%s $<)" -le $(KERNEL_SIZE)
-	cp $< $@
-	truncate -s $(KERNEL_SIZE) $@
+$(BUILD)/kernel.sectors: $(BUILD)/kernel.bin
+	@size=$$(stat -c%s $<); \
+	if [ $$size -eq 0 ]; then echo "Error: kernel vacío"; exit 1; fi; \
+	if [ $$size -gt 524288 ]; then \
+		echo "Error: el cargador BIOS actual admite hasta 512 KiB"; \
+		exit 1; \
+	fi; \
+	sectors=$$(( (size + 511) / 512 )); \
+	cp $< $@; \
+	truncate -s $$((sectors * 512)) $@
 
-$(BUILD)/chiquios.img: boot/boot.asm $(BUILD)/kernel.padded
-	$(AS) -f bin boot/boot.asm -o $(BUILD)/boot.bin
-	test "$$(stat -c%s $(BUILD)/boot.bin)" -eq 512
-	cat $(BUILD)/boot.bin $(BUILD)/kernel.padded > $@
-	test "$$(stat -c%s $@)" -eq $(DISK_SIZE)
+$(BUILD)/chiquios.img: boot/boot.asm $(BUILD)/kernel.bin $(BUILD)/kernel.sectors
+	@bytes=$$(stat -c%s $(BUILD)/kernel.bin); \
+	sectors=$$(( ($$bytes + 511) / 512 )); \
+	$(AS) -f bin -D KERNEL_BYTES=$$bytes -D KERNEL_SECTORS=$$sectors boot/boot.asm -o $(BOOT_BIN)
+	test "$$(stat -c%s $(BOOT_BIN))" -eq 512
+	cat $(BOOT_BIN) $(BUILD)/kernel.sectors > $@
 
 check: $(BUILD)/chiquios.img
-	test "$$(stat -c%s $(BUILD)/kernel.bin)" -le $(KERNEL_SIZE)
-	test "$$(stat -c%s $(BUILD)/kernel.padded)" -eq $(KERNEL_SIZE)
-	test "$$(stat -c%s $(BUILD)/chiquios.img)" -eq $(DISK_SIZE)
-	echo "ChiquiOS: comprobaciones correctas"
+	@test "$$(stat -c%s $(BOOT_BIN))" -eq 512
+	@test "$$(stat -c%s $(BUILD)/kernel.bin)" -le 524288
+	@echo "ChiquiOS: kernel compilado y cargador BIOS generado."
+	@echo "Tamaño del kernel: $$(stat -c%s $(BUILD)/kernel.bin) bytes."
 
-iso: $(BUILD)/chiquios.img boot/boot_cd.asm
+iso: $(BUILD)/kernel.bin $(BUILD)/kernel.sectors boot/boot_cd.asm
 	mkdir -p $(BUILD)/iso
-	$(AS) -f bin boot/boot_cd.asm -o $(BOOT_CD)
+	@bytes=$$(stat -c%s $(BUILD)/kernel.bin); \
+	sectors=$$(( ($$bytes + 511) / 512 )); \
+	$(AS) -f bin -D KERNEL_BYTES=$$bytes -D KERNEL_SECTORS=$$sectors boot/boot_cd.asm -o $(BOOT_CD)
 	test "$$(stat -c%s $(BOOT_CD))" -eq 512
-	test "$$(stat -c%s $(BUILD)/chiquios.img)" -eq $(DISK_SIZE)
-	dd if=/dev/zero of=$(BOOTIMG) bs=512 count=33 status=none
+	@sectors=$$(stat -c%s $(BUILD)/kernel.sectors); \
+	sectors=$$((sectors / 512)); \
+	dd if=/dev/zero of=$(BOOTIMG) bs=512 count=$$((sectors + 1)) status=none
 	dd if=$(BOOT_CD) of=$(BOOTIMG) conv=notrunc status=none
-	dd if=$(BUILD)/chiquios.img of=$(BOOTIMG) bs=512 \
-		skip=1 seek=1 count=32 conv=notrunc status=none
+	dd if=$(BUILD)/kernel.sectors of=$(BOOTIMG) bs=512 seek=1 conv=notrunc status=none
 	xorriso -as mkisofs \
 		-o $(ISO) \
 		-b boot.img \
 		-c boot.cat \
 		-no-emul-boot \
-		-boot-load-size 33 \
+		-boot-load-size 4 \
 		$(BUILD)/iso
 
 clean:
