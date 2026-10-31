@@ -2,10 +2,14 @@
 #include "idt.h"
 
 static idt_entry_t idt[IDT_ENTRIES];
-static idt_pointer_t idtr;
+
+extern void (*isr_stub_table[32])(void);
 
 void idt_set_gate(u8 vector, void (*handler)(void))
 {
+    if (handler == 0)
+        return;
+
     u64 address = (u64)handler;
 
     idt[vector].offset_low = (u16)address;
@@ -19,9 +23,7 @@ void idt_set_gate(u8 vector, void (*handler)(void))
 
 void idt_initialize(void)
 {
-    u32 i;
-
-    for (i = 0; i < IDT_ENTRIES; i++) {
+    for (u32 i = 0; i < IDT_ENTRIES; i++) {
         idt[i].offset_low = 0;
         idt[i].selector = 0;
         idt[i].ist = 0;
@@ -31,13 +33,18 @@ void idt_initialize(void)
         idt[i].reserved = 0;
     }
 
-    idtr.limit = sizeof(idt) - 1;
-    idtr.base = (u64)&idt;
+    for (u32 i = 0; i < 32; i++)
+        idt_set_gate((u8)i, isr_stub_table[i]);
+
+    idt_pointer_t pointer;
+
+    pointer.limit = sizeof(idt) - 1;
+    pointer.base = (u64)&idt;
 
     __asm__ volatile (
         "lidt %0"
         :
-        : "m"(idtr)
+        : "m"(pointer)
         : "memory"
     );
 }
