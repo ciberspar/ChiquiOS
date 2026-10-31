@@ -82,10 +82,10 @@ $(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel.elf
 $(BUILD_DIR)/kernel.sectors: $(BUILD_DIR)/kernel.bin
 	@size=$$(stat -c%s $<); \
 	if [ $$size -eq 0 ]; then \
-		echo "ERROR: kernel vacío"; exit 1; \
+		echo "ERROR: kernel vacio"; exit 1; \
 	fi; \
 	if [ $$size -gt 524288 ]; then \
-		echo "ERROR: kernel supera el límite del cargador BIOS actual"; \
+		echo "ERROR: kernel supera el limite del cargador BIOS actual"; \
 		exit 1; \
 	fi; \
 	sectors=$$(( (size + 511) / 512 )); \
@@ -106,14 +106,14 @@ check: $(BUILD_DIR)/chiquios.img
 	@test "$$(stat -c%s $(BOOT_BIN))" -eq 512
 	@test "$$(stat -c%s $(BUILD_DIR)/kernel.bin)" -le 524288
 	@readelf -h $(BUILD_DIR)/kernel.elf | grep -q "ELF32"
-	@echo "ChiquiOS i386 BIOS: compilación completada."
+	@echo "ChiquiOS i386 BIOS: compilacion completada."
 
 iso:
-	@echo "ISO todavía no implementada."
+	@echo "ISO i386 todavia no implementada."
 	@exit 1
 
 # ==================================================
-# x86-64 (ELF independiente, todavía sin bootloader)
+# x86-64
 # ==================================================
 
 else ifeq ($(ARCH),x86_64)
@@ -137,7 +137,7 @@ C_OBJECTS += $(BUILD_DIR)/kernel/arch/x86_64/arch.o
 ASM_OBJECTS := $(BUILD_DIR)/entry.o
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS)
 
-all: $(BUILD_DIR)/kernel.elf
+all: $(BUILD_DIR)/kernel.elf $(BUILD_DIR)/kernel.bin
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -152,15 +152,20 @@ $(BUILD_DIR)/kernel/%.o: kernel/%.c
 $(BUILD_DIR)/kernel.elf: $(OBJECTS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
 
-check: $(BUILD_DIR)/kernel.elf
+$(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel.elf
+	$(OBJCOPY) -O binary $< $@
+	@test -s $@
+
+check: $(BUILD_DIR)/kernel.elf $(BUILD_DIR)/kernel.bin
 	@readelf -h $(BUILD_DIR)/kernel.elf | grep -q "ELF64"
 	@readelf -h $(BUILD_DIR)/kernel.elf | grep -q "Advanced Micro Devices X86-64"
 	@nm $(BUILD_DIR)/kernel.elf | grep -q " T _start"
 	@nm $(BUILD_DIR)/kernel.elf | grep -q " T kernel_main"
-	@echo "ChiquiOS x86-64: ELF compilado y verificado."
+	@test -s $(BUILD_DIR)/kernel.bin
+	@echo "ChiquiOS x86-64: ELF y BIN verificados."
 
 iso:
-	@echo "ISO x86-64 todavía no implementada."
+	@echo "ISO x86-64 todavia no implementada."
 	@exit 1
 
 else
