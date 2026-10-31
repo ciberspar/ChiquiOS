@@ -4,7 +4,6 @@ ENTRY(_start)
 SECTIONS
 {
     . = 0x00100000;
-
     _kernel_start = .;
 
     .text ALIGN(4096) :
@@ -25,8 +24,15 @@ SECTIONS
     .bss ALIGN(4096) :
     {
         _bss_start = .;
+
         *(COMMON)
         *(.bss*)
+
+        . = ALIGN(16);
+        _stack_bottom = .;
+        . += 65536;
+        _stack_top = .;
+
         _bss_end = .;
     }
 
