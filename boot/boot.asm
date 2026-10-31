@@ -26,6 +26,9 @@ start:
 
     mov [boot_drive], dl
 
+    call collect_memory
+    jc memory_error
+
     mov word [remaining], KERNEL_SECTORS
     mov word [destination_segment], 0x1000
     mov word [dap_lba], 1
@@ -59,7 +62,6 @@ read_chunk:
     add [destination_segment], bx
 
     add [dap_lba], ax
-
     jmp read_kernel
 
 kernel_loaded:
@@ -72,29 +74,92 @@ kernel_loaded:
 
     jmp dword 0x08:protected_entry
 
-disk_error:
-    mov si, error_message
+; BIOS E820: obtener regiones de memoria física.
+collect_memory:
+    xor ax, ax
+    mov es, ax
+    mov di, 0x6000
 
-.print:
+    xor ebx, ebx
+    xor bp, bp
+
+.e820_loop:
+    cmp bp, 64
+    jae .e820_done
+
+    mov eax, 0xE820
+    mov edx, 0x534D4150
+    mov ecx, 24
+
+    mov dword [es:di + 20], 1
+
+    int 0x15
+    jc .e820_done
+
+    cmp eax, 0x534D4150
+    jne .e820_error
+
+    cmp ecx, 20
+    jb .e820_next
+
+    add di, 24
+    inc bp
+
+.e820_next:
+    test ebx, ebx
+    jnz .e820_loop
+
+.e820_done:
+    test bp, bp
+    jz .e820_error
+
+    mov dword [0x5000], 0x43484951
+    mov dword [0x5004], 1
+    mov dword [0x5008], 0x6000
+    movzx eax, bp
+    mov [0x500C], eax
+    mov dword [0x5010], 1
+    mov dword [0x5014], 1
+    mov dword [0x5018], 0
+    mov dword [0x501C], 0
+    mov dword [0x5020], 0
+    mov dword [0x5024], 0
+
+    clc
+    ret
+
+.e820_error:
+    stc
+    ret
+
+memory_error:
+    mov si, memory_message
+    jmp print_error
+
+disk_error:
+    mov si, disk_message
+
+print_error:
     lodsb
     test al, al
-    jz .halt
+    jz halt_error
 
     mov ah, 0x0E
     mov bx, 0x0007
     int 0x10
-    jmp .print
+    jmp print_error
 
-.halt:
+halt_error:
     cli
     hlt
-    jmp .halt
+    jmp halt_error
 
 boot_drive db 0
 remaining dw 0
 destination_segment dw 0
 
-error_message db 'ChiquiOS: error leyendo el kernel', 0
+memory_message db 'ChiquiOS: error E820', 0
+disk_message db 'ChiquiOS: error leyendo kernel', 0
 
 align 4
 
@@ -134,7 +199,7 @@ protected_entry:
     mov esp, 0x90000
     cld
 
-    mov esi, 0x10000
+    mov esi, 0x5000
     mov edi, 0x100000
     mov ecx, (KERNEL_BYTES + 3) / 4
     rep movsd
