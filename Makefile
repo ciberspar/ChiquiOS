@@ -1,9 +1,6 @@
 
 BUILD := build
-ISO := $(BUILD)/chiquios.iso
-BOOTIMG := $(BUILD)/iso/boot.img
 BOOT_BIN := $(BUILD)/boot.bin
-BOOT_CD := $(BUILD)/boot_cd.bin
 
 CC := gcc
 LD := ld
@@ -20,6 +17,7 @@ LDFLAGS := -m elf_i386 -T kernel/linker.ld
 C_SOURCES := \
 	kernel/core/memory.c \
 	kernel/core/pmm.c \
+	kernel/core/driver_manager.c \
 	kernel/kernel.c \
 	kernel/supervisor/supervisor.c \
 	kernel/drivers/vga.c \
@@ -64,7 +62,7 @@ $(BUILD)/kernel.sectors: $(BUILD)/kernel.bin
 		echo "Error: kernel vacío"; exit 1; \
 	fi; \
 	if [ $$size -gt 524288 ]; then \
-		echo "Error: el cargador BIOS actual admite hasta 512 KiB"; \
+		echo "Error: límite del cargador BIOS actual: 512 KiB"; \
 		exit 1; \
 	fi; \
 	sectors=$$(( (size + 511) / 512 )); \
@@ -84,15 +82,11 @@ $(BUILD)/chiquios.img: boot/boot.asm $(BUILD)/kernel.bin $(BUILD)/kernel.sectors
 check: $(BUILD)/chiquios.img
 	@test "$$(stat -c%s $(BOOT_BIN))" -eq 512
 	@test "$$(stat -c%s $(BUILD)/kernel.bin)" -le 524288
-	@echo "ChiquiOS: compilación BIOS completada."
+	@echo "ChiquiOS i386: compilación completada."
 	@echo "Kernel: $$(stat -c%s $(BUILD)/kernel.bin) bytes."
 
-# ISO temporalmente deshabilitada:
-# boot_cd.asm necesita implementar el mismo protocolo E820
-# y boot_info que el cargador BIOS antes de habilitarla.
 iso:
-	@echo "ISO deshabilitada temporalmente."
-	@echo "Primero hay que adaptar y probar boot/boot_cd.asm."
+	@echo "ISO deshabilitada hasta completar el cargador El Torito."
 	@exit 1
 
 clean:
