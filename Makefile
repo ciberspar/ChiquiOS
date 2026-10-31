@@ -121,7 +121,7 @@ else ifeq ($(ARCH),x86_64)
 BUILD_DIR := $(BUILD)/x86_64
 ARCH_SOURCE := kernel/arch/x86_64/arch.c
 ENTRY_SOURCE := kernel/arch/x86_64/entry.asm
-LINKER_SCRIPT := kernel/x86_64/linker.ld
+LINKER_SCRIPT := kernel/arch/x86_64/linker.ld
 
 CFLAGS := $(COMMON_CFLAGS) \
 	-m64 \
