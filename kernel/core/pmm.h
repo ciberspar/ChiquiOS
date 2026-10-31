@@ -20,5 +20,6 @@ u64 pmm_allocate_page(void);
 chiquios_status_t pmm_free_page(u64 address);
 
 void pmm_get_stats(pmm_stats_t *stats);
+int pmm_is_initialized(void);
 
 #endif
