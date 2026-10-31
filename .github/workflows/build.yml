@@ -1,4 +1,3 @@
-
 name: Build ChiquiOS
 
 on:
@@ -24,7 +23,7 @@ jobs:
       - name: Instalar herramientas
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm gcc binutils make
+          sudo apt-get install -y nasm gcc binutils make qemu-system-x86
 
       - name: Limpiar compilación anterior
         run: make clean
@@ -34,6 +33,20 @@ jobs:
 
       - name: Comprobar imagen
         run: make check
+
+      - name: Comprobar arranque BIOS con QEMU
+        timeout-minutes: 1
+        run: |
+          timeout 20s qemu-system-i386 \
+            -machine pc \
+            -m 128M \
+            -drive format=raw,file=build/chiquios.img \
+            -boot c \
+            -display none \
+            -serial none \
+            -monitor none \
+            -no-reboot \
+            -no-shutdown || test $? -eq 124
 
       - name: Publicar imagen
         uses: actions/upload-artifact@v4
