@@ -3,6 +3,7 @@
 #define CHIQUIOS_CORE_PMM_H
 
 #include "types.h"
+#include "memory.h"
 
 #define PMM_PAGE_SIZE 4096ULL
 
