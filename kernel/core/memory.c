@@ -1,11 +1,11 @@
 
 #include "memory.h"
+#include "pmm.h"
 
 #define MEMORY_MAP_ADDRESS_LIMIT 0x100000000ULL
 
 static const memory_map_t *active_map;
 static u64 total_usable;
-static u64 available_usable;
 
 chiquios_status_t memory_initialize(const memory_map_t *map)
 {
@@ -34,24 +34,22 @@ chiquios_status_t memory_initialize(const memory_map_t *map)
         if (end < region->base)
             return CHIQUIOS_ERROR;
 
-        if (region->type == MEMORY_TYPE_USABLE) {
-            u64 start = region->base;
-            u64 finish = end;
+        if (region->type != MEMORY_TYPE_USABLE)
+            continue;
 
-            if (start >= MEMORY_MAP_ADDRESS_LIMIT)
-                continue;
+        if (region->base >= MEMORY_MAP_ADDRESS_LIMIT)
+            continue;
 
-            if (finish > MEMORY_MAP_ADDRESS_LIMIT)
-                finish = MEMORY_MAP_ADDRESS_LIMIT;
+        if (end > MEMORY_MAP_ADDRESS_LIMIT)
+            end = MEMORY_MAP_ADDRESS_LIMIT;
 
-            if (finish > start) {
-                u64 amount = finish - start;
+        if (end > region->base) {
+            u64 amount = end - region->base;
 
-                if (total > (~(u64)0) - amount)
-                    return CHIQUIOS_ERROR;
+            if (total > (~(u64)0) - amount)
+                return CHIQUIOS_ERROR;
 
-                total += amount;
-            }
+            total += amount;
         }
     }
 
@@ -60,7 +58,6 @@ chiquios_status_t memory_initialize(const memory_map_t *map)
 
     active_map = map;
     total_usable = total;
-    available_usable = total;
 
     return CHIQUIOS_OK;
 }
@@ -72,7 +69,13 @@ u64 memory_get_total(void)
 
 u64 memory_get_available(void)
 {
-    return available_usable;
+    pmm_stats_t stats;
+
+    if (!pmm_is_initialized())
+        return total_usable;
+
+    pmm_get_stats(&stats);
+    return stats.free_pages * PMM_PAGE_SIZE;
 }
 
 const memory_map_t *memory_get_map(void)
