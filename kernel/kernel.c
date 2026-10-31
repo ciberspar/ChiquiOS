@@ -2,6 +2,7 @@
 #include "include/supervisor.h"
 #include "tui.h"
 
+#include "core/arch.h"
 #include "core/arch_config.h"
 #include "core/boot_info.h"
 #include "core/memory.h"
@@ -10,10 +11,11 @@
 
 static void kernel_panic(const char *message)
 {
+    arch_disable_interrupts();
     vga_write(message);
 
     for (;;) {
-        __asm__ volatile ("cli; hlt");
+        arch_halt();
     }
 }
 
@@ -30,9 +32,8 @@ void kernel_main(const chiquios_boot_info_t *boot_info)
         kernel_panic("ERROR: informacion de arranque nula.\n");
 
     if (boot_info->magic != CHIQUIOS_BOOT_MAGIC ||
-        boot_info->version != CHIQUIOS_BOOT_VERSION) {
+        boot_info->version != CHIQUIOS_BOOT_VERSION)
         kernel_panic("ERROR: informacion de arranque invalida.\n");
-    }
 
     if (boot_info->boot_method != CHIQUIOS_BOOT_BIOS)
         kernel_panic("ERROR: metodo de arranque incompatible.\n");
@@ -72,7 +73,6 @@ void kernel_main(const chiquios_boot_info_t *boot_info)
     vga_write("\nDriver Manager: inicializado\n");
 
     driver_manager_list();
-
     pci_scan_all();
 
     supervisor_initialize();
@@ -83,6 +83,6 @@ void kernel_main(const chiquios_boot_info_t *boot_info)
     tui_run();
 
     for (;;) {
-        __asm__ volatile ("hlt");
+        arch_halt();
     }
 }
