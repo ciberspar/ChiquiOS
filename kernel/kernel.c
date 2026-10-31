@@ -1,88 +1,171 @@
-#include "include/drivers.h"
-#include "include/supervisor.h"
-#include "tui.h"
 
-#include "core/arch.h"
-#include "core/arch_config.h"
-#include "core/boot_info.h"
+#include "core/types.h"
 #include "core/memory.h"
 #include "core/pmm.h"
 #include "core/driver_manager.h"
+#include "core/arch.h"
+#include "core/arch_config.h"
+
+#include "include/drivers.h"
+#include "include/supervisor.h"
+
+#include "drivers/vga.h"
+#include "drivers/serial.h"
+
+#include "arch/x86_64/gdt.h"
 
 static void kernel_panic(const char *message)
 {
     arch_disable_interrupts();
-    vga_write(message);
 
-    for (;;) {
-        arch_halt();
+    vga_clear();
+    vga_write_string("\n");
+    vga_write_string("================================\n");
+    vga_write_string("       CHIQUIOS - KERNEL PANIC\n");
+    vga_write_string("================================\n");
+    vga_write_string(message);
+    vga_write_string("\nSistema detenido.\n");
+
+    if (serial_is_initialized())
+    {
+        serial_write_string("[PANIC] ");
+        serial_write_string(message);
+        serial_write_string("\n");
     }
+
+    for (;;)
+        arch_halt();
 }
 
-void kernel_main(const chiquios_boot_info_t *boot_info)
+static void kernel_log(const char *message)
 {
+    vga_write_string("[ChiquiOS] ");
+    vga_write_string(message);
+    vga_write_string("\n");
+
+    serial_write_string("[ChiquiOS] ");
+    serial_write_string(message);
+    serial_write_string("\n");
+}
+
+void kernel_main(void *boot_info)
+{
+    /*
+     * 1. Inicialización de salida.
+     */
+
     vga_initialize();
+    serial_initialize();
 
-    vga_write("================================\n");
-    vga_write("          ChiquiOS 1.0\n");
-    vga_write("       Kernel propio i386\n");
-    vga_write("================================\n\n");
+    kernel_log("Iniciando ChiquiOS");
 
-    if (boot_info == NULL)
-        kernel_panic("ERROR: informacion de arranque nula.\n");
-
-    if (boot_info->magic != CHIQUIOS_BOOT_MAGIC ||
-        boot_info->version != CHIQUIOS_BOOT_VERSION)
-        kernel_panic("ERROR: informacion de arranque invalida.\n");
-
-    if (boot_info->boot_method != CHIQUIOS_BOOT_BIOS)
-        kernel_panic("ERROR: metodo de arranque incompatible.\n");
-
-#if CHIQUIOS_BUILD_I386
-    if (boot_info->architecture != CHIQUIOS_ARCH_I386)
-        kernel_panic("ERROR: arquitectura incompatible con i386.\n");
-#elif CHIQUIOS_BUILD_X86_64
-    if (boot_info->architecture != CHIQUIOS_ARCH_X86_64)
-        kernel_panic("ERROR: arquitectura incompatible con x86_64.\n");
+#if CHIQUIOS_BUILD_X86_64
+    kernel_log("Arquitectura: x86-64");
+#elif CHIQUIOS_BUILD_I386
+    kernel_log("Arquitectura: i386");
+#else
+    kernel_panic("Arquitectura no compatible");
 #endif
 
-    if (memory_initialize(&boot_info->memory) != CHIQUIOS_OK)
-        kernel_panic("ERROR: mapa de memoria invalido.\n");
+    /*
+     * 2. Validación del cargador.
+     */
 
-    if (pmm_initialize(&boot_info->memory) != CHIQUIOS_OK)
-        kernel_panic("ERROR: no se pudo iniciar PMM.\n");
+    if (boot_info == 0)
+        kernel_panic("Boot information inexistente");
 
-    vga_write("Arquitectura: ");
-    vga_write(CHIQUIOS_ARCH_NAME);
-    vga_write("\n");
+    kernel_log("Boot information recibida");
 
-    vga_write("Mapa de memoria: detectado\n");
-    vga_write("Gestor de memoria fisica: iniciado\n");
+    /*
+     * 3. Arquitectura.
+     *
+     * El cargador ya debe haber establecido el modo
+     * de CPU correspondiente antes de entrar aquí.
+     */
+
+#if CHIQUIOS_BUILD_X86_64
+    kernel_log("Ejecutando en modo x86-64");
+#endif
+
+    /*
+     * 4. Memoria física.
+     *
+     * El formato de boot_info debe coincidir con
+     * memory_map_t antes de utilizarlo.
+     *
+     * No convertir punteros ni estructuras a ciegas.
+     */
+
+    kernel_log("Inicializando memoria");
+
+    /*
+     * La conversión del mapa del cargador a memory_map_t
+     * se integrará cuando se unifique el protocolo de arranque.
+     */
+
+    kernel_log("Memoria: inicializacion pendiente de protocolo");
+
+    /*
+     * 5. CPU.
+     */
+
+    kernel_log("Detectando CPU");
 
     cpu_detect();
 
-    if (driver_manager_initialize() != CHIQUIOS_OK)
-        kernel_panic("ERROR: Driver Manager.\n");
+    /*
+     * 6. PCI.
+     */
 
-    driver_register("Intel E1000", 0x8086, 0x100E);
-    driver_register("Intel E1000", 0x8086, 0x100F);
-    driver_register("Intel E1000", 0x8086, 0x1004);
-    driver_register("Intel E1000", 0x8086, 0x10D3);
-    driver_register("Intel E1000", 0x8086, 0x153A);
+    kernel_log("Inicializando PCI");
 
-    vga_write("\nDriver Manager: inicializado\n");
+    pci_scan();
 
-    driver_manager_list();
-    pci_scan_all();
+    /*
+     * 7. Drivers.
+     */
 
-    supervisor_initialize();
+    kernel_log("Inicializando dispositivos");
 
-    vga_write("\nSupervisor: inicializado\n");
-    vga_write("Iniciando interfaz de texto...\n");
+    /*
+     * El gestor de drivers registra dispositivos.
+     * La inicialización individual debe comprobar
+     * el resultado de cada controlador.
+     */
 
-    tui_run();
+    /*
+     * 8. Supervisor.
+     */
 
-    for (;;) {
+    kernel_log("Preparando supervisor");
+
+    /*
+     * No iniciar servicios que todavía no tengan
+     * inicializadores comprobables.
+     */
+
+    /*
+     * 9. Interfaz.
+     */
+
+    kernel_log("ChiquiOS kernel iniciado");
+
+    vga_write_string("\n");
+    vga_write_string("================================\n");
+    vga_write_string("           CHIQUIOS\n");
+    vga_write_string("================================\n");
+    vga_write_string("Arquitectura: ");
+#if CHIQUIOS_BUILD_X86_64
+    vga_write_string("x86-64\n");
+#else
+    vga_write_string("i386\n");
+#endif
+    vga_write_string("Estado: kernel en ejecucion\n");
+
+    /*
+     * Bucle provisional hasta disponer de scheduler.
+     */
+
+    for (;;)
         arch_halt();
-    }
 }
