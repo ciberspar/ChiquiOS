@@ -8,6 +8,7 @@ AS := nasm
 OBJCOPY := objcopy
 
 C_SOURCES := \
+  kernel/drivers/serial.c \
 	kernel/core/memory.c \
 	kernel/core/pmm.c \
 	kernel/core/driver_manager.c \
