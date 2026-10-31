@@ -2,16 +2,16 @@
 #include "gdt.h"
 #include "tss.h"
 
-struct __attribute__((packed)) gdt_entry {
+typedef struct __attribute__((packed)) {
     u16 limit_low;
     u16 base_low;
     u8 base_middle;
     u8 access;
     u8 granularity;
     u8 base_high;
-};
+} gdt_entry_t;
 
-struct __attribute__((packed)) gdt_tss_entry {
+typedef struct __attribute__((packed)) {
     u16 limit_low;
     u16 base_low;
     u8 base_middle;
@@ -20,66 +20,67 @@ struct __attribute__((packed)) gdt_tss_entry {
     u8 base_high;
     u32 base_upper;
     u32 reserved;
-};
+} gdt_tss_entry_t;
 
-struct __attribute__((packed)) gdt_pointer {
+typedef struct __attribute__((packed)) {
+    gdt_entry_t entries[5];
+    gdt_tss_entry_t tss;
+} gdt_table_t;
+
+typedef struct __attribute__((packed)) {
     u16 limit;
     u64 base;
-};
+} gdt_pointer_t;
 
-static struct gdt_entry gdt[5];
-static struct gdt_tss_entry tss_descriptor;
-static struct gdt_pointer gdtr;
+static gdt_table_t gdt;
 
-extern void gdt_load(const struct gdt_pointer *pointer);
+extern void gdt_load(const gdt_pointer_t *pointer);
 
-static void gdt_set(
-    u32 index,
-    u8 access,
-    u8 flags
-) {
-    gdt[index].limit_low = 0;
-    gdt[index].base_low = 0;
-    gdt[index].base_middle = 0;
-    gdt[index].access = access;
-    gdt[index].granularity = flags;
-    gdt[index].base_high = 0;
+static void set_entry(u32 index, u8 access, u8 flags)
+{
+    gdt.entries[index].limit_low = 0;
+    gdt.entries[index].base_low = 0;
+    gdt.entries[index].base_middle = 0;
+    gdt.entries[index].access = access;
+    gdt.entries[index].granularity = flags;
+    gdt.entries[index].base_high = 0;
 }
 
-static void gdt_set_tss(tss64_t *tss)
+static void set_tss(tss64_t *tss)
 {
     u64 base = (u64)tss;
     u32 limit = sizeof(tss64_t) - 1;
 
-    tss_descriptor.limit_low = limit & 0xFFFF;
-    tss_descriptor.base_low = base & 0xFFFF;
-    tss_descriptor.base_middle = (base >> 16) & 0xFF;
-    tss_descriptor.access = 0x89;
-    tss_descriptor.granularity = (limit >> 16) & 0x0F;
-    tss_descriptor.base_high = (base >> 24) & 0xFF;
-    tss_descriptor.base_upper = (u32)(base >> 32);
-    tss_descriptor.reserved = 0;
+    gdt.tss.limit_low = (u16)limit;
+    gdt.tss.base_low = (u16)base;
+    gdt.tss.base_middle = (u8)(base >> 16);
+    gdt.tss.access = 0x89;
+    gdt.tss.granularity = (u8)((limit >> 16) & 0x0F);
+    gdt.tss.base_high = (u8)(base >> 24);
+    gdt.tss.base_upper = (u32)(base >> 32);
+    gdt.tss.reserved = 0;
 }
 
 void gdt_initialize(u64 kernel_stack)
 {
-    gdt_set(0, 0x00, 0x00);
-    gdt_set(1, 0x9A, 0x20);
-    gdt_set(2, 0x92, 0x00);
-    gdt_set(3, 0xFA, 0x20);
-    gdt_set(4, 0xF2, 0x00);
+    set_entry(0, 0x00, 0x00);
+    set_entry(1, 0x9A, 0x20);
+    set_entry(2, 0x92, 0x00);
+    set_entry(3, 0xFA, 0x20);
+    set_entry(4, 0xF2, 0x00);
 
     tss_initialize(kernel_stack);
-    gdt_set_tss(tss_get());
+    set_tss(tss_get());
 
-    gdtr.limit = sizeof(gdt) + sizeof(tss_descriptor) - 1;
-    gdtr.base = (u64)&gdt[0];
+    gdt_pointer_t pointer;
+    pointer.limit = sizeof(gdt) - 1;
+    pointer.base = (u64)&gdt;
 
-    gdt_load(&gdtr);
+    gdt_load(&pointer);
 
     __asm__ volatile (
         "mov $0x28, %%ax\n"
-        "ltr %%ax\n"
+        "ltr %%ax"
         :
         :
         : "rax", "memory"
