@@ -1,6 +1,7 @@
 BITS 64
 
 section .text
+
 global _start
 extern kernel_main
 extern _bss_start
@@ -10,21 +11,20 @@ _start:
     cli
     cld
 
-    ; El cargador debe entregar:
-    ; RDI = dirección de boot_info
-    ; RSP = pila válida de 16 bytes de alineación
+    ; Guardar boot_info recibido en RDI.
+    mov r12, rdi
 
-    xor rbp, rbp
-
-    ; Limpiar BSS
+    ; Limpiar BSS.
     lea rdi, [_bss_start]
     lea rcx, [_bss_end]
     sub rcx, rdi
     xor eax, eax
     rep stosb
 
-    ; Recuperar boot_info y llamar al kernel
-    ; RDI conserva el primer argumento de la ABI x86-64.
+    ; Recuperar el argumento.
+    mov rdi, r12
+
+    ; Llamar al kernel.
     call kernel_main
 
 .halt:
