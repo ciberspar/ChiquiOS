@@ -6,6 +6,7 @@
 #include "core/boot_info.h"
 #include "core/memory.h"
 #include "core/pmm.h"
+#include "core/driver_manager.h"
 
 void kernel_main(const chiquios_boot_info_t *boot_info)
 {
@@ -48,11 +49,30 @@ void kernel_main(const chiquios_boot_info_t *boot_info)
 
     vga_write("Mapa de memoria: detectado\n");
     vga_write("Gestor de memoria fisica: iniciado\n");
-    vga_write("Paginas fisicas libres: ");
-
-    /* Las estadisticas completas se expondran en la TUI. */
 
     cpu_detect();
+
+    if (driver_manager_initialize() != CHIQUIOS_OK) {
+        vga_write("ERROR: Driver Manager.\n");
+
+        for (;;) {
+            __asm__ volatile ("cli; hlt");
+        }
+    }
+
+    /* Intel E1000: IDs reconocidos por el detector actual. */
+    driver_register("Intel E1000", 0x8086, 0x100E);
+    driver_register("Intel E1000", 0x8086, 0x100F);
+    driver_register("Intel E1000", 0x8086, 0x1004);
+    driver_register("Intel E1000", 0x8086, 0x10D3);
+    driver_register("Intel E1000", 0x8086, 0x153A);
+
+    vga_write("\nDriver Manager: inicializado\n");
+
+    driver_manager_list();
+
+    pci_scan_all();
+
     supervisor_initialize();
 
     vga_write("\nSupervisor: inicializado\n");
