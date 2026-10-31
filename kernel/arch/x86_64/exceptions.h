@@ -4,7 +4,6 @@
 
 #include "../../core/types.h"
 
-void exceptions_initialize(void);
-void exception_handler(u64 vector, u64 error_code);
+void exception_dispatch(u64 vector, u64 error_code);
 
 #endif
