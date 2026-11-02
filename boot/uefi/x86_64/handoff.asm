@@ -5,19 +5,19 @@ section .text
 
 global cbl_x64_handoff
 
+; System V AMD64 calling convention:
 ; RDI = boot_info
-; RSI = kernel entry
+; RSI = kernel_entry
 
 cbl_x64_handoff:
     cli
     cld
 
     mov rax, rsi
-    mov rdi, rdi
-
-    and rsp, -16
     xor rbp, rbp
 
+    ; RDI conserva el puntero boot_info.
+    ; El kernel prepara su propia pila.
     jmp rax
 
 .halt:
