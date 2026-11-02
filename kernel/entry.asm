@@ -9,17 +9,16 @@ extern kernel_main
 extern _bss_start
 extern _bss_end
 
+
 _start:
     cli
     cld
 
-    ; ESI debe contener la dirección de boot_info.
-    mov ebp, esi
+    ; Guardar boot_info en una zona temporal.
+    mov [boot_info_saved], esi
 
-    ; Preparar la pila del kernel.
     mov esp, 0x90000
     and esp, 0xFFFFFFF0
-    xor ebp, ebp
 
     ; Limpiar BSS.
     mov edi, _bss_start
@@ -28,7 +27,9 @@ _start:
     xor eax, eax
     rep stosb
 
-    ; kernel_main(boot_info)
+    ; Recuperar boot_info.
+    mov esi, [boot_info_saved]
+
     push esi
     call kernel_main
     add esp, 4
@@ -37,3 +38,8 @@ _start:
     cli
     hlt
     jmp .halt
+
+section .bss
+align 4
+boot_info_saved:
+    resd 1
