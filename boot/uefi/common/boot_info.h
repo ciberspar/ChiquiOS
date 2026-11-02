@@ -76,4 +76,11 @@ _Static_assert(offsetof(cbl_boot_info_t, architecture) == 28,
 _Static_assert(sizeof(cbl_memory_region_t) == 24,
                "Memory region size incorrect");
 
+
+#if CHIQUIOS_BUILD_X86_64
+
+typedef char boot_info_size_check[
+    (sizeof(chiquios_boot_info_t) == 56) ? 1 : -1
+];
+
 #endif
