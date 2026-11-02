@@ -107,7 +107,7 @@ EFI_STATUS cbl_read_file(
         goto cleanup;
 
     if (info->FileSize == 0 ||
-        info->FileSize > 64ULL * 1024ULL * 1024ULL) {
+        info->FileSize > (UINTN)-1) {
         status = EFI_BAD_BUFFER_SIZE;
         goto cleanup;
     }
