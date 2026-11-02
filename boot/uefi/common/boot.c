@@ -1,19 +1,23 @@
 
 #include "boot.h"
+#include <stdint.h>
 
-#define CBL_MAX_MEMORY_REGIONS 256
+#define CBL_MAX_MEMORY_REGIONS 1024
+#define CBL_MEMORY_MAP_BUFFER_SIZE (128 * 1024)
 
-static uint32_t cbl_convert_type(UINT32 type) {
+static uint32_t cbl_convert_type(UINT32 type)
+{
     switch (type) {
         case EfiLoaderCode:
         case EfiLoaderData:
         case EfiBootServicesCode:
         case EfiBootServicesData:
         case EfiConventionalMemory:
+        case EfiPersistentMemory:
             return 1;
 
         case EfiUnusableMemory:
-            return 2;
+            return 5;
 
         case EfiACPIReclaimMemory:
             return 3;
@@ -21,12 +25,8 @@ static uint32_t cbl_convert_type(UINT32 type) {
         case EfiACPIMemoryNVS:
             return 4;
 
-        case EfiMemoryMappedIO:
-        case EfiMemoryMappedIOPortSpace:
-            return 5;
-
         default:
-            return 0;
+            return 2;
     }
 }
 
@@ -34,100 +34,64 @@ EFI_STATUS cbl_exit_boot_services(
     EFI_HANDLE image_handle,
     EFI_SYSTEM_TABLE *system_table,
     cbl_boot_info_t **boot_info
-) {
+)
+{
     if (!image_handle || !system_table || !boot_info)
         return EFI_INVALID_PARAMETER;
 
     EFI_BOOT_SERVICES *bs = system_table->BootServices;
 
-    EFI_PHYSICAL_ADDRESS info_address = 0;
-    EFI_PHYSICAL_ADDRESS regions_address = 0;
+    cbl_boot_info_t *info = NULL;
+    cbl_memory_region_t *regions = NULL;
+    EFI_MEMORY_DESCRIPTOR *map = NULL;
 
-    UINTN pages_info =
-        EFI_SIZE_TO_PAGES(sizeof(cbl_boot_info_t));
+    UINTN map_capacity = CBL_MEMORY_MAP_BUFFER_SIZE;
+    UINTN regions_capacity =
+        CBL_MAX_MEMORY_REGIONS * sizeof(cbl_memory_region_t);
 
-    UINTN pages_regions =
-        EFI_SIZE_TO_PAGES(
-            CBL_MAX_MEMORY_REGIONS *
-            sizeof(cbl_memory_region_t)
-        );
+    EFI_STATUS status;
 
-    EFI_STATUS status = uefi_call_wrapper(
-        bs->AllocatePages,
-        4,
-        AllocateAnyPages,
+    status = uefi_call_wrapper(
+        bs->AllocatePool, 3,
         EfiLoaderData,
-        pages_info,
-        &info_address
+        sizeof(cbl_boot_info_t),
+        (void **)&info
     );
 
     if (EFI_ERROR(status))
         return status;
 
     status = uefi_call_wrapper(
-        bs->AllocatePages,
-        4,
-        AllocateAnyPages,
+        bs->AllocatePool, 3,
         EfiLoaderData,
-        pages_regions,
-        &regions_address
+        regions_capacity,
+        (void **)&regions
     );
 
     if (EFI_ERROR(status))
-        return status;
+        goto fail;
 
-    cbl_boot_info_t *info =
-        (cbl_boot_info_t *)(uintptr_t)info_address;
+    status = uefi_call_wrapper(
+        bs->AllocatePool, 3,
+        EfiLoaderData,
+        map_capacity,
+        (void **)&map
+    );
 
-    cbl_memory_region_t *regions =
-        (cbl_memory_region_t *)(uintptr_t)regions_address;
+    if (EFI_ERROR(status))
+        goto fail;
 
-    UINTN map_size = 0;
+    UINTN map_size = map_capacity;
     UINTN map_key = 0;
     UINTN descriptor_size = 0;
     UINT32 descriptor_version = 0;
 
-    EFI_MEMORY_DESCRIPTOR *map = NULL;
+    for (UINTN attempt = 0; attempt < 8; attempt++) {
 
-    for (unsigned int attempt = 0; attempt < 4; attempt++) {
-        map_size = 0;
-
-        status = uefi_call_wrapper(
-            bs->GetMemoryMap,
-            5,
-            &map_size,
-            NULL,
-            &map_key,
-            &descriptor_size,
-            &descriptor_version
-        );
-
-        if (status != EFI_BUFFER_TOO_SMALL)
-            return status;
-
-        UINTN allocation_size =
-            map_size + descriptor_size * 8;
-
-        EFI_PHYSICAL_ADDRESS map_address = 0;
+        map_size = map_capacity;
 
         status = uefi_call_wrapper(
-            bs->AllocatePages,
-            4,
-            AllocateAnyPages,
-            EfiLoaderData,
-            EFI_SIZE_TO_PAGES(allocation_size),
-            &map_address
-        );
-
-        if (EFI_ERROR(status))
-            return status;
-
-        map = (EFI_MEMORY_DESCRIPTOR *)(uintptr_t)map_address;
-        map_size = allocation_size;
-
-        status = uefi_call_wrapper(
-            bs->GetMemoryMap,
-            5,
+            bs->GetMemoryMap, 5,
             &map_size,
             map,
             &map_key,
@@ -135,18 +99,33 @@ EFI_STATUS cbl_exit_boot_services(
             &descriptor_version
         );
 
+        if (status == EFI_BUFFER_TOO_SMALL) {
+            status = EFI_OUT_OF_RESOURCES;
+            goto fail;
+        }
+
         if (EFI_ERROR(status))
-            continue;
+            goto fail;
+
+        if (descriptor_size < sizeof(EFI_MEMORY_DESCRIPTOR) ||
+            descriptor_size == 0 ||
+            map_size % descriptor_size != 0) {
+            status = EFI_COMPROMISED_DATA;
+            goto fail;
+        }
 
         UINTN count = map_size / descriptor_size;
 
-        if (count > CBL_MAX_MEMORY_REGIONS)
-            return EFI_OUT_OF_RESOURCES;
+        if (count > CBL_MAX_MEMORY_REGIONS) {
+            status = EFI_OUT_OF_RESOURCES;
+            goto fail;
+        }
 
         for (UINTN i = 0; i < count; i++) {
             EFI_MEMORY_DESCRIPTOR *d =
-                (EFI_MEMORY_DESCRIPTOR *)
-                ((UINT8 *)map + i * descriptor_size);
+                (EFI_MEMORY_DESCRIPTOR *)(
+                    (UINT8 *)map + i * descriptor_size
+                );
 
             regions[i].base = d->PhysicalStart;
             regions[i].length =
@@ -157,8 +136,11 @@ EFI_STATUS cbl_exit_boot_services(
 
         info->magic = CBL_BOOT_MAGIC;
         info->version = CBL_BOOT_VERSION;
-        info->memory.regions_address = regions_address;
+
+        info->memory.regions_address =
+            (uintptr_t)regions;
         info->memory.count = (uint32_t)count;
+
         info->boot_method = CBL_BOOT_UEFI;
 
 #if defined(__x86_64__)
@@ -172,9 +154,12 @@ EFI_STATUS cbl_exit_boot_services(
         info->framebuffer_height = 0;
         info->framebuffer_pitch = 0;
 
+        /*
+         * No se deben realizar asignaciones ni llamadas
+         * innecesarias entre GetMemoryMap y ExitBootServices.
+         */
         status = uefi_call_wrapper(
-            bs->ExitBootServices,
-            2,
+            bs->ExitBootServices, 2,
             image_handle,
             map_key
         );
@@ -185,8 +170,20 @@ EFI_STATUS cbl_exit_boot_services(
         }
 
         if (status != EFI_INVALID_PARAMETER)
-            return status;
+            goto fail;
     }
 
-    return EFI_ABORTED;
+    status = EFI_ABORTED;
+
+fail:
+    if (map)
+        uefi_call_wrapper(bs->FreePool, 1, map);
+
+    if (regions)
+        uefi_call_wrapper(bs->FreePool, 1, regions);
+
+    if (info)
+        uefi_call_wrapper(bs->FreePool, 1, info);
+
+    return status;
 }
