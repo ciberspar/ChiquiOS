@@ -7,6 +7,8 @@ SECTIONS
 
     .text ALIGN(4K) :
     {
+        _kernel_start = .;
+        KEEP(*(.text.entry))
         *(.text*)
     }
 
@@ -22,14 +24,24 @@ SECTIONS
 
     .bss ALIGN(4K) :
     {
+        _bss_start = .;
         *(COMMON)
         *(.bss*)
+
+        . = ALIGN(16);
+        _stack_bottom = .;
+        . += 65536;
+        _stack_top = .;
+
+        _bss_end = .;
     }
+
+    _kernel_end = .;
 
     /DISCARD/ :
     {
         *(.comment)
-        *(.eh_frame*)
         *(.note*)
+        *(.eh_frame*)
     }
 }
