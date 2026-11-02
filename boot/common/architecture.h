@@ -1,0 +1,13 @@
+#ifndef CBL_ARCHITECTURE_H
+#define CBL_ARCHITECTURE_H
+
+#define CBL_ARCH_I386   1
+#define CBL_ARCH_X86_64 2
+
+#define CBL_BOOT_BIOS 1
+#define CBL_BOOT_UEFI 2
+
+#define CBL_MAGIC 0x43424C31U
+#define CBL_VERSION 1U
+
+#endif
