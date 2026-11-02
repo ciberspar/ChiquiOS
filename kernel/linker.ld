@@ -4,10 +4,10 @@ ENTRY(_start)
 SECTIONS
 {
     . = 0x00100000;
+    _kernel_start = .;
 
     .text ALIGN(4K) :
     {
-        _kernel_start = .;
         KEEP(*(.text.entry))
         *(.text*)
     }
@@ -25,6 +25,7 @@ SECTIONS
     .bss ALIGN(4K) :
     {
         _bss_start = .;
+
         *(COMMON)
         *(.bss*)
 
@@ -41,7 +42,7 @@ SECTIONS
     /DISCARD/ :
     {
         *(.comment)
-        *(.note*)
         *(.eh_frame*)
+        *(.note*)
     }
 }
