@@ -2,7 +2,7 @@
 #include "exceptions.h"
 
 #include "../../core/arch.h"
-#include "../../drivers/vga.h"
+#include "../../include/drivers.h"
 
 static const char *exception_names[32] = {
     "Division Error",
@@ -62,6 +62,7 @@ void exception_dispatch(u64 vector, u64 error_code)
             hex[(error_code >> shift) & 0xF],
             '\0'
         };
+
         vga_write(c);
     }
 
