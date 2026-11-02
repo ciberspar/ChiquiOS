@@ -1,8 +1,12 @@
 
-name: Build ChiquiOS
+name: ChiquiOS Multilanguage Build
 
 on:
   push:
+    branches:
+      - main
+      - pruebas
+  pull_request:
     branches:
       - main
       - pruebas
@@ -13,56 +17,60 @@ permissions:
 
 jobs:
   build:
-    name: Build i386 and x86-64
+    name: Build ${{ matrix.arch }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
 
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - i386
+          - x86_64
+
     steps:
-      - name: Descargar repositorio
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar herramientas
+      - name: Install toolchains
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            nasm gcc binutils make \
-            xorriso qemu-system-x86
+            gcc \
+            g++ \
+            binutils \
+            nasm \
+            make \
+            python3
 
-      - name: Limpiar compilaciones
+      - name: Show toolchain versions
+        run: |
+          gcc --version
+          g++ --version
+          nasm -v
+          make --version
+          python3 --version
+
+      - name: Clean
         run: make clean
 
-      # i386
-      - name: Compilar i386
-        run: make ARCH=i386
+      - name: Compile kernel
+        run: make ARCH=${{ matrix.arch }}
 
-      - name: Verificar i386
-        run: make ARCH=i386 check
+      - name: Validate build
+        run: make ARCH=${{ matrix.arch }} check
 
-      # x86-64
-      - name: Compilar ISO x86-64 BIOS
-        run: make ARCH=x86_64
-
-      - name: Verificar ISO x86-64
-        run: make ARCH=x86_64 check
-
-      - name: Verificar formato ELF64
+      - name: Verify ELF architecture and symbols
         run: |
-          readelf -h build/x86_64/kernel.elf
-          readelf -h build/x86_64/kernel.elf | grep -q ELF64
-          nm build/x86_64/kernel.elf | grep -q " T _start"
-          nm build/x86_64/kernel.elf | grep -q " T kernel_main"
+          python3 tools/verify_elf.py \
+            build/${{ matrix.arch }}/kernel.elf \
+            ${{ matrix.arch }}
 
-      # Artefactos
-      - name: Publicar imagen i386
+      - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ChiquiOS-i386-BIOS
-          path: build/chiquios.img
-          if-no-files-found: error
-
-      - name: Publicar ISO x86-64
-        uses: actions/upload-artifact@v4
-        with:
-          name: ChiquiOS-x86_64-ISO
-          path: build/x86_64/ChiquiOS-x86_64.iso
+          name: ChiquiOS-${{ matrix.arch }}-kernel
+          path: |
+            build/${{ matrix.arch }}/kernel.elf
+            build/${{ matrix.arch }}/kernel.bin
           if-no-files-found: error
