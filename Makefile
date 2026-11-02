@@ -1,42 +1,47 @@
 
 # ============================================================
-# ChiquiOS - Makefile principal
-# Arquitecturas: i386 y x86_64
+# ChiquiOS - Multilanguage Kernel Build
+# Architectures: i386 / x86_64
 # ============================================================
 
 ARCH ?= i386
 
 CC      := gcc
+CXX     := g++
 AS      := nasm
 LD      := ld
 OBJCOPY := objcopy
 
 BUILD_DIR := build/$(ARCH)
 
-# ------------------------------------------------------------
-# FLAGS COMUNES
-# ------------------------------------------------------------
+CPPFLAGS := -Ikernel -Ikernel/include
 
-CFLAGS_COMMON := \
+COMMON_FLAGS := \
 	-ffreestanding \
 	-fno-stack-protector \
 	-fno-pic \
 	-fno-pie \
 	-fno-builtin \
+	-fno-common \
 	-fno-asynchronous-unwind-tables \
 	-fno-unwind-tables \
 	-Wall \
 	-Wextra \
-	-O2 \
-	-Ikernel
+	-O2
 
-LDFLAGS_COMMON := \
-	-nostdlib \
-	--build-id=none
+CFLAGS := $(COMMON_FLAGS) -std=gnu11
+
+CXXFLAGS := $(COMMON_FLAGS) \
+	-std=c++17 \
+	-fno-exceptions \
+	-fno-rtti \
+	-fno-use-cxa-atexit \
+	-fno-threadsafe-statics
+
+LDFLAGS := -nostdlib --build-id=none
 
 # ------------------------------------------------------------
-# CODIGO COMUN DEL KERNEL
-# Todas estas rutas existen en el repositorio
+# COMMON C SOURCES
 # ------------------------------------------------------------
 
 C_SOURCES := \
@@ -60,22 +65,48 @@ C_SOURCES := \
 	kernel/pkg/bacus.c
 
 # ------------------------------------------------------------
-# ARQUITECTURA X86-64
+# C++ SOURCES
 # ------------------------------------------------------------
 
-ifeq ($(ARCH),x86_64)
+CXX_SOURCES := \
+	kernel/cpp/system_info.cpp
 
-ARCH_CFLAGS := \
+# ------------------------------------------------------------
+# ARCHITECTURE CONFIGURATION
+# ------------------------------------------------------------
+
+ifeq ($(ARCH),i386)
+
+ARCH_FLAGS := \
+	-m32 \
+	-march=i386 \
+	-mno-sse \
+	-mno-mmx
+
+AS_FORMAT := elf32
+LD_FORMAT := elf_i386
+
+ARCH_C_SOURCES := \
+	kernel/arch/i386/arch.c
+
+ARCH_ASM_SOURCES := \
+	kernel/entry.asm
+
+LINKER_SCRIPT := kernel/linker.ld
+
+else ifeq ($(ARCH),x86_64)
+
+ARCH_FLAGS := \
 	-m64 \
 	-march=x86-64 \
 	-mno-red-zone \
-	-mcmodel=small
+	-mno-sse \
+	-mno-mmx
 
-ARCH_ASFLAGS := -f elf64
+AS_FORMAT := elf64
+LD_FORMAT := elf_x86_64
 
-LD_ARCH_FLAGS := -m elf_x86_64
-
-ARCH_SOURCES := \
+ARCH_C_SOURCES := \
 	kernel/arch/x86_64/arch.c \
 	kernel/arch/x86_64/gdt.c \
 	kernel/arch/x86_64/tss.c \
@@ -89,127 +120,82 @@ ARCH_ASM_SOURCES := \
 
 LINKER_SCRIPT := kernel/arch/x86_64/linker.ld
 
-# ------------------------------------------------------------
-# ARQUITECTURA I386
-# ------------------------------------------------------------
-
-else ifeq ($(ARCH),i386)
-
-ARCH_CFLAGS := \
-	-m32 \
-	-march=i386
-
-ARCH_ASFLAGS := -f elf32
-
-LD_ARCH_FLAGS := -m elf_i386
-
-ARCH_SOURCES := \
-	kernel/arch/i386/arch.c
-
-ARCH_ASM_SOURCES := \
-	kernel/entry.asm
-
-LINKER_SCRIPT := kernel/linker.ld
-
-# ------------------------------------------------------------
-# ARQUITECTURA NO SOPORTADA
-# ------------------------------------------------------------
-
 else
-
-$(error Arquitectura no soportada: $(ARCH))
-
+$(error Unsupported architecture: $(ARCH))
 endif
 
 # ------------------------------------------------------------
-# OBJETOS
+# OBJECTS
 # ------------------------------------------------------------
 
-CFLAGS := $(CFLAGS_COMMON) $(ARCH_CFLAGS)
+C_OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,\
+	$(C_SOURCES) $(ARCH_C_SOURCES))
 
-C_OBJECTS := \
-	$(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SOURCES) $(ARCH_SOURCES))
+CXX_OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,\
+	$(CXX_SOURCES))
 
-ASM_OBJECTS := \
-	$(patsubst %.asm,$(BUILD_DIR)/%.o,$(ARCH_ASM_SOURCES))
+ASM_OBJECTS := $(patsubst %.asm,$(BUILD_DIR)/%.o,\
+	$(ARCH_ASM_SOURCES))
+
+ALL_OBJECTS := \
+	$(ASM_OBJECTS) \
+	$(C_OBJECTS) \
+	$(CXX_OBJECTS)
 
 KERNEL_ELF := $(BUILD_DIR)/kernel.elf
 KERNEL_BIN := $(BUILD_DIR)/kernel.bin
 
 # ------------------------------------------------------------
-# OBJETIVO PRINCIPAL
+# BUILD
 # ------------------------------------------------------------
 
-.PHONY: all clean check iso
+.PHONY: all clean check
 
 all: $(KERNEL_BIN)
 
-# ------------------------------------------------------------
-# CREAR DIRECTORIOS
-# ------------------------------------------------------------
-
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
-
-# ------------------------------------------------------------
-# COMPILAR C
-# ------------------------------------------------------------
-
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(ARCH_FLAGS) \
+		-MMD -MP -c $< -o $@
 
-# ------------------------------------------------------------
-# COMPILAR ENSAMBLADOR NASM
-# ------------------------------------------------------------
+$(BUILD_DIR)/%.o: %.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(ARCH_FLAGS) \
+		-MMD -MP -c $< -o $@
 
 $(BUILD_DIR)/%.o: %.asm
 	mkdir -p $(dir $@)
-	$(AS) $(ARCH_ASFLAGS) $< -o $@
+	$(AS) -f $(AS_FORMAT) $< -o $@
 
-# ------------------------------------------------------------
-# ENLAZAR KERNEL ELF
-# ------------------------------------------------------------
-
-$(KERNEL_ELF): $(C_OBJECTS) $(ASM_OBJECTS) $(LINKER_SCRIPT)
+$(KERNEL_ELF): $(ALL_OBJECTS) $(LINKER_SCRIPT)
 	mkdir -p $(dir $@)
-	$(LD) $(LD_ARCH_FLAGS) $(LDFLAGS_COMMON) \
+	$(LD) -m $(LD_FORMAT) $(LDFLAGS) \
 		-T $(LINKER_SCRIPT) \
 		-o $@ \
-		$(ASM_OBJECTS) \
-		$(C_OBJECTS)
-
-# ------------------------------------------------------------
-# GENERAR BINARIO
-# ------------------------------------------------------------
+		$(ALL_OBJECTS)
 
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $< $@
 
 # ------------------------------------------------------------
-# VERIFICACION
+# VALIDATION
 # ------------------------------------------------------------
 
-check: $(KERNEL_ELF)
-	@echo "======================================"
+check: $(KERNEL_ELF) $(KERNEL_BIN)
+	@echo "=================================="
 	@echo " ChiquiOS $(ARCH)"
-	@echo " Compilacion y enlace completados"
-	@echo "======================================"
-	@file $(KERNEL_ELF)
+	@echo " Build completed"
+	@echo "=================================="
+	readelf -h $(KERNEL_ELF)
+	nm -g $(KERNEL_ELF) | grep -q "kernel_main"
+	nm -g $(KERNEL_ELF) | grep -q "chiquios_cpp_module_name"
 
 # ------------------------------------------------------------
-# ISO
-# ------------------------------------------------------------
-
-iso: $(KERNEL_BIN)
-	@echo "El kernel esta compilado."
-	@echo "La ISO requiere integrar el cargador BIOS/UEFI."
-	@echo "Este objetivo todavia no genera una ISO."
-
-# ------------------------------------------------------------
-# LIMPIEZA
+# CLEAN
 # ------------------------------------------------------------
 
 clean:
 	rm -rf build
-	@echo "Compilaciones eliminadas."
+	@echo "Build directory cleaned."
+
+-include $(shell find build -name '*.d' 2>/dev/null)
