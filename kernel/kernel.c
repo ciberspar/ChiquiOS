@@ -7,6 +7,8 @@
 #include "include/drivers.h"
 #include "drivers/serial.h"
 
+extern const char *chiquios_cpp_module_name(void);
+
 static void kernel_panic(const char *message)
 {
     arch_disable_interrupts();
@@ -25,9 +27,8 @@ static void kernel_panic(const char *message)
         serial_write_string("\n");
     }
 
-    for (;;) {
+    for (;;)
         arch_halt();
-    }
 }
 
 static void kernel_log(const char *message)
@@ -43,12 +44,11 @@ static void kernel_log(const char *message)
 
 void kernel_main(const chiquios_boot_info_t *boot_info)
 {
-    /* 1. Inicializar salida */
-
     vga_initialize();
     serial_initialize();
 
     kernel_log("Iniciando ChiquiOS");
+    kernel_log(chiquios_cpp_module_name());
 
 #if CHIQUIOS_BUILD_X86_64
     kernel_log("Arquitectura: x86-64");
@@ -58,35 +58,22 @@ void kernel_main(const chiquios_boot_info_t *boot_info)
     kernel_panic("Arquitectura no compatible");
 #endif
 
-    /* 2. Comprobar informacion de arranque */
-
-    if (boot_info == 0) {
+    if (boot_info == 0)
         kernel_panic("Boot information inexistente");
-    }
 
     kernel_log("Boot information recibida");
 
-    /* 3. Detectar procesador */
-
-    kernel_log("Detectando CPU");
+    kernel_log("Detectando procesador");
     cpu_detect();
-
-    /* 4. Detectar dispositivos PCI */
 
     kernel_log("Buscando dispositivos PCI");
     pci_scan_all();
 
-    /* 5. Detectar controladores USB */
-
     kernel_log("Buscando controladores USB");
     pci_scan_usb();
 
-    /* 6. Iniciar deteccion de red */
-
     kernel_log("Detectando adaptadores de red");
     internet_initialize();
-
-    /* 7. Mensaje final */
 
     kernel_log("Inicializacion basica completada");
 
@@ -103,9 +90,6 @@ void kernel_main(const chiquios_boot_info_t *boot_info)
 
     vga_write("Estado: kernel en ejecucion\n");
 
-    /* Esperar al siguiente subsistema */
-
-    for (;;) {
+    for (;;)
         arch_halt();
-    }
 }
