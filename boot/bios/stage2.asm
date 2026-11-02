@@ -1,28 +1,26 @@
+
 BITS 16
 ORG 0x8000
 
-stage2_start:
+start:
     cli
-
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
-
     sti
 
-    mov si, welcome_message
+    mov si, banner
     call print_string
 
-    mov si, next_message
+    mov si, waiting
     call print_string
 
 halt:
     cli
-.hang:
     hlt
-    jmp .hang
+    jmp halt
 
 print_string:
     lodsb
@@ -32,19 +30,16 @@ print_string:
     mov ah, 0x0E
     mov bx, 0x0007
     int 0x10
-
     jmp print_string
 
 .done:
     ret
 
-welcome_message:
-    db 13, 10
-    db '================================', 13, 10
-    db '       CHIQUIOS BOOTLOADER', 13, 10
-    db '              CBL', 13, 10
-    db '================================', 13, 10, 0
+banner:
+    db "ChiquiOS Bootloader", 13, 10, 0
 
-next_message:
-    db 'CBL Stage 2 loaded successfully.', 13, 10
-    db 'Kernel loading: not implemented yet.', 13, 10, 0
+waiting:
+    db "BIOS Stage 2 loaded.", 13, 10
+    db "Kernel loading is the next step.", 13, 10, 0
+
+times 4096-($-$$) db 0
