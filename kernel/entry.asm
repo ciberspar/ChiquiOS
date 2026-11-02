@@ -13,8 +13,8 @@ _start:
     cli
     cld
 
-    ; ESI contiene el puntero boot_info recibido del CBL.
-    ; No lo guardamos en BSS porque vamos a limpiarla.
+    ; ESI contiene boot_info.
+    ; Se conserva en el registro mientras limpiamos BSS.
 
     ; Limpiar BSS.
     mov edi, _bss_start
@@ -23,7 +23,7 @@ _start:
     xor eax, eax
     rep stosb
 
-    ; Usar la pila reservada por el linker.
+    ; Preparar la pila reservada por el linker.
     mov esp, _stack_top
     and esp, 0xFFFFFFF0
 
